@@ -1,2 +1,4 @@
 # VAMSC
-Virginia Marine Science Center "Searching for Clues" Robotic Arm Exhibit Firmware
+Robotic Arm Firmware
+Virginia Marine Science Center
+"Reaching Out for Clues" Exhibit
