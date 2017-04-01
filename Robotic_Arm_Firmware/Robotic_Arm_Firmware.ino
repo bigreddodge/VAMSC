@@ -60,6 +60,15 @@
                                                      * NOTE: Shoulder->Elbow & Elbow->Claw channels must be identical length. */
       static const double Leg1 = 18;                // ShoulderChannels are no longer symmetric
       static const double Leg2 = 14;
+      
+      static const double AHVO = 3;
+      static const double AHRO = 1;
+      static const double ARVO = 2;
+      static const double ARRO = 4.5;
+      static const double AMHG = sqrt(pow(AHVO,2) + pow(AHRO,2));   // root(10)
+      static const double AMRG = sqrt(pow(ARVO,2) + pow((Leg1 - ARRO),2));    // root(186.25)
+      static const double MountComponentAngle = atan(AHVO/AHRO) * toDegrees;
+      static const double LegComponentAngle = atan(ARVO/(Leg1 - ARRO)) * toDegrees;
 
     // Paremetric velocity constants
       static const double rinc = 0.25;              // Radial increment size
@@ -140,6 +149,8 @@
       double LSpos = 90;
 /** ------------------------------------------------------------------------------------------------------------------------------------------- */
 
+
+
 /** setup() Function
  * Arduino Initialization
  */
@@ -179,7 +190,6 @@ void loop() {
         }
         delay(10);                                    // Process delay (also aides in debouncing inputs)
       } while (!in);                                  // End of input loop
-Serial.println("EXITS INPUT LOOP");
   /** Process Input
    *  Modifies claw coordinates according to control input.
    *  These values are subject to modification by boundary checks (below) before the arm is m
@@ -189,22 +199,25 @@ Serial.println("EXITS INPUT LOOP");
 /* DEBUG */
       if (in == 5) {
         LSpos++;
-        Serial.println("HIGH CHECK");
-        if (LSpos > 155) {
-          Serial.println("HIGH LIMIT");
-          LSpos = 155;
+        if (LSpos > 133) {
+          LSpos = 133;
         }
-      vShoulderM.Move(LSpos);
-      Serial.println(LSpos);
       }
       if (in == 6) {      
         LSpos--;
-        if (LSpos < 20){
-          LSpos = 20;
+        if (LSpos < 53){
+          LSpos = 53;
         }
-      vShoulderM.Move(LSpos);
-      Serial.println(LSpos);
       }
+      vShoulderM.Move(actuatorCommand(LSpos));
+      Serial.print("\t\tCommanded Angle: ");
+      Serial.println(LSpos);
+
+      //Serial.println(AMHG); 3.16
+      //Serial.println(AMRG); 13.65
+      //Serial.println(MountComponentAngle); 71.57
+      //Serial.println(LegComponentAngle); 8.43
+
 
 /* ********* DEBUG ******************
       if (in == 1)
@@ -388,6 +401,18 @@ int GetInput() {
     }
   }
   return 0;
+}
+
+double actuatorCommand(double angle){
+  double ActuatorComponentAngle = 360 - (MountComponentAngle + LegComponentAngle + 90 + angle);
+  double ActuatorLength = sqrt(pow(AMHG,2) + pow(AMRG,2) - (2 * AMHG * AMRG * cos(ActuatorComponentAngle * toRadians)));
+  double ActuatorCommand = map(ActuatorLength, 12.0, 16.0, 145.0, 20.0);
+  Serial.println(map(45,0, 360, 0, 2*M_PI));
+  Serial.println(ActuatorComponentAngle);
+  Serial.println(ActuatorLength);
+  Serial.println(ActuatorCommand);
+  Serial.println("***********************");
+  return ActuatorCommand;
 }
 
 /** blinkLED() Function
