@@ -1,23 +1,22 @@
 /** ------------------------------------------------------------------------------------------------------------------------------------------- */
 /*
- * Firmware:      Robotic Arm Exhibit v1.1.2
+ * Firmware:      Robotic Arm Exhibit v1.1.3
  * Description:   Cylindrical-coordinate control system
  * Location:      Virginia Beach Marine Science Center
  *                "Reaching Out for Clues" Exhibit
  * Author:        Imran A. Uddin
  *                Old Dominion University
- * Version:       1.1.2
+ * Version:       1.1.3
  * Major:         20AUG2014
  * Minor:         20AUG2015
- * Revision:      22FEB2017
- *                Added comments, adjusted structure and format.
- *                No operational changes in this revision.
+ * Revision:      02APR2017
+ *                Parameter and operational modifications
  * Includes:      Robotic_Arm_Firmware.ino (this file)
  *                joint.h
  *                joint.cpp
  *                coor.h
  *                coor.cpp
- * Verified IDEs: Arduino v1.6.3, v1.6.5
+ * Verified IDEs: v1.6.5
  */
 /** ------------------------------------------------------------------------------------------------------------------------------------------- */
 
@@ -38,10 +37,10 @@
   /** vvvvvvvvvv     BEGIN ADJUSTABLE PARAMETERS     vvvvvvvvvvv */
   
     // Exhibit boundaries
-      static const double LBOUND = -16;             // Sets the leftmost claw range in inches from center
-      static const double RBOUND = 16;              // Sets the rightmost claw range in inches from center
-      static const double FBOUND = 40;              // Sets the forwardmost claw range in inches from center
-      static const double FLOORBOUND = 12;          // Sets the lowest claw range in incheas from center
+      static const double LBOUND = -22;             // Sets the leftmost claw range in inches from center //-16
+      static const double RBOUND = 16;              // Sets the rightmost claw range in inches from center //16
+      static const double FBOUND = 40;              // Sets the forwardmost claw range in inches from center //40
+      static const double FLOORBOUND = 30;          // Sets the lowest claw range in inches from center //12
     
     // Initial coordinates
       static const double rinit = 14;               // Initial claw radius
@@ -56,12 +55,15 @@
       static const int zmin = 0;                    /* Sets the vertical claw limit.
                                                      * MUST BE NON-NEGATIVE (Causes trig error -> erratic behavior). */
       static const double SOffset = 4;              // Linear offset from hShoulder to vShoulder rotational axes
+      static const double MountOffset = 3.75;       // Linear offset from mount wall to horizontal rotation axis
       static const double Leg = 18;                 /* Symmetric length between servos - single channel length
                                                      * NOTE: Shoulder->Elbow & Elbow->Claw channels must be identical length. */
+      static const double Leg1 = 18;                // ShoulderChannels are no longer symmetric
+      static const double Leg2 = 14;
 
     // Paremetric velocity constants
       static const double rinc = 0.25;              // Radial increment size
-      static const double thetainc = 0.0061086523;  // Rotational increment size
+      static const double thetainc = M_PI / 128;    // Rotational increment size
       static const double zinc = 0.2;               // Vertical increment size
 
     // Firmware execution constants
@@ -134,7 +136,8 @@
       int in, reset = 0;
       unsigned long timer;
       bool ClawState;
-
+      
+      double LSpos = 90;
 /** ------------------------------------------------------------------------------------------------------------------------------------------- */
 
 /** setup() Function
@@ -176,12 +179,34 @@ void loop() {
         }
         delay(10);                                    // Process delay (also aides in debouncing inputs)
       } while (!in);                                  // End of input loop
-
+Serial.println("EXITS INPUT LOOP");
   /** Process Input
    *  Modifies claw coordinates according to control input.
-   *  These values are subject to modification by boundary checks (below) before the arm is moved.
+   *  These values are subject to modification by boundary checks (below) before the arm is m
    *  See Also: GetInput() function comments (below)
   */
+
+/* DEBUG */
+      if (in == 5) {
+        LSpos++;
+        Serial.println("HIGH CHECK");
+        if (LSpos > 155) {
+          Serial.println("HIGH LIMIT");
+          LSpos = 155;
+        }
+      vShoulderM.Move(LSpos);
+      Serial.println(LSpos);
+      }
+      if (in == 6) {      
+        LSpos--;
+        if (LSpos < 20){
+          LSpos = 20;
+        }
+      vShoulderM.Move(LSpos);
+      Serial.println(LSpos);
+      }
+
+/* ********* DEBUG ******************
       if (in == 1)
         Coor->setR(Coor->R() + rinc);                 // increment radius (Extend Out)
       if (in == 2)
@@ -194,12 +219,13 @@ void loop() {
         Coor->setZ(Coor->Z() - zinc);                 // decrement z (Retract Up)
       if (in == 6)
         Coor->setZ(Coor->Z() + zinc);                 // increment z (Extend Down)
+************* END DEBUG ************* */
 
   /** Check Boundaries
    * Compares commanded arm position to exhibit boundaries and physical limitations of the arm.
    * If a boundary conflict is found, the parameter which violates the boundary is modified to equal the boundary.
    */
-   
+/* ******** DEBUG ***********  
     // Check Exhibit Boundaries
       if (Coor->Z() > FLOORBOUND)                                 // Floor Bound
         Coor->setZ(FLOORBOUND);
@@ -221,9 +247,11 @@ void loop() {
         Coor->setR(rmin);
       if (Coor->Z() < zmin)                                       // Check for vertical overextension
         Coor->setZ(zmin);
-
+******** END DEBUG *********** */
   /** Move arm to modified commanded position */
-      UpdatePositions();
+ /* ***DEBUG     UpdatePositions();
+  * 
+  */
 }
 
 /** ------------------------------------------------------------------------------------------------------------------------------------------- */
@@ -231,7 +259,8 @@ void loop() {
 /** UpdatePositions() Function
  * Calculates required servo commands.
  * Peforms final mathematical/boundary checks to ensure valid positioning
- * Moves servos to modified commanded position.
+ * Moves servos to 
+ * modified commanded position.
  * Also provides basic serial debugging output.
  */
 void UpdatePositions() {
