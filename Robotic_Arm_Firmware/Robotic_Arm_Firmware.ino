@@ -254,8 +254,11 @@ void loop() {
         Coor->setT(thetamin);
       if (Coor->T() > thetamax)                                   // Check leftmost mechanical rotation limit
         Coor->setT(thetamax);
+        
+      // *** The following limit check does not incorporate the mounting offset
       if (Coor->R() >= (2 * Leg))                                 // Check for radial overextension
         Coor->setR((2 * Leg) - 1);
+        
       if (Coor->R() < rmin)                                       // Check for overfolding of elbow
         Coor->setR(rmin);
       if (Coor->Z() < zmin)                                       // Check for vertical overextension
@@ -281,13 +284,13 @@ void UpdatePositions() {
     double elbow = 2 * acos(sqrt(pow(Coor->R(), 2) + pow(Coor->Z(), 2)) / (2 * Leg));   // elbow = arccos(root(r^2+z^2)/(2*Leg))
     if (isnan(elbow)) {                                                                 // Check for undefined result
       elbow = 0;                                                                        // Reset to real number
-      Serial.println("NAN DETECTED");
+      Serial.println("ELBOW COMMANDED TO NAN");
     }
     
     double shoulder = (elbow / 2) + atan(Coor->R() / Coor->Z());                        // shoulder = (elbow/2)+arctan(r/z)
     if (isnan(shoulder)) {                                                              // Check for undefined result
       shoulder = 179 * toRadians;                                                       // Reset to real number
-      Serial.println("NAN DETECTED");
+      Serial.println("SHOULDER COMMANDED TO NAN");
     }
     
     elbow *= toDegrees;                                                                 // Convert elbow angle to degrees
@@ -296,7 +299,8 @@ void UpdatePositions() {
    if (elbow > 125)                                                                     // Elbow mechanical hard-limit - Folding. (Added 8/20/2015)
      elbow = 125;
    Serial.println("Elbow: " + String(elbow) + "    Shoulder:" + String(shoulder));
-
+  // "(r,t,z):" Coor->R Coor->T Coor->Z "(x,y,z)" Coor->X Coor->Y Coor-Z
+  
   // Move servos
     hShoulder.Move(Coor->T() * toDegrees);
     vShoulderM.Move(shoulder);
