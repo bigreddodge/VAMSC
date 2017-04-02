@@ -70,6 +70,11 @@
       static const double MountComponentAngle = atan(AHVO/AHRO) * toDegrees;
       static const double LegComponentAngle = atan(ARVO/(Leg1 - ARRO)) * toDegrees;
 
+      static const double ActMinPos = 12;
+      static const double ActMinCmd = 145;
+      static const double ActMaxPos = 16;
+      static const double ActMaxCmd = 20;
+
     // Paremetric velocity constants
       static const double rinc = 0.25;              // Radial increment size
       static const double thetainc = M_PI / 128;    // Rotational increment size
@@ -82,7 +87,11 @@
   /** ^^^^^^^^^^      END ADJUSTABLE PARAMETERS      ^^^^^^^^^^ */
   /** --------------------------------------------------------------------------------------------------------------------------------------- */
 
+    // Operating parameters determined by hardware limitations
 
+    static const double ActPosRange = abs(ActMaxPos - ActMinPos);       // 4.0" in current configuration
+    static const double ActCmdRange = abs(ActMaxCmd - ActMinCmd);       // 125.0 in current configuration
+    
   /** These constants define the mininum and maximum acceptable analogRead() values produced
    *  by operating the joystick on the control board.
    *  They were determined by repeated trials and modified to provide reasonable thresholds.
@@ -199,17 +208,18 @@ void loop() {
 /* DEBUG */
       if (in == 5) {
         LSpos++;
-        if (LSpos > 133) {
-          LSpos = 133;
+        if (LSpos > 180) {
+          LSpos = 180;
         }
       }
       if (in == 6) {      
         LSpos--;
-        if (LSpos < 53){
-          LSpos = 53;
+        if (LSpos < 0){
+          LSpos = 0;
         }
       }
-      vShoulderM.Move(actuatorCommand(LSpos));
+      double moveDist = actuatorCommand(LSpos);
+      if (moveDist != -1) {vShoulderM.Move(moveDist);}
       Serial.print("\t\tCommanded Angle: ");
       Serial.println(LSpos);
 
@@ -408,15 +418,21 @@ int GetInput() {
 }
 
 double actuatorCommand(double angle){
+
   double ActuatorComponentAngle = 360 - (MountComponentAngle + LegComponentAngle + 90 + angle);
   double ActuatorLength = sqrt(pow(AMHG,2) + pow(AMRG,2) - (2 * AMHG * AMRG * cos(ActuatorComponentAngle * toRadians)));
-  double ActuatorCommand = map(ActuatorLength, 12.0, 16.0, 145.0, 20.0);
-  Serial.println(map(45,0, 360, 0, 2*M_PI));
-  Serial.println(ActuatorComponentAngle);
-  Serial.println(ActuatorLength);
-  Serial.println(ActuatorCommand);
-  Serial.println("***********************");
-  return ActuatorCommand;
+  double ActuatorCommand = (ActMaxPos - ActuatorLength) * (ActCmdRange / ActPosRange)+ ActMaxCmd;
+  if ((ActuatorLength >= ActMinPos) && (ActuatorLength <= ActMaxPos)){
+    return ActuatorCommand;
+  } else {
+    Serial.println("***********************");
+    Serial.println("Error in actuatorCommand() Function, argument out of range");
+    Serial.println(ActuatorComponentAngle);
+    Serial.println(ActuatorLength);
+    Serial.println(ActuatorCommand);
+    Serial.println("***********************");
+    return -1;
+  }
 }
 
 /** blinkLED() Function
