@@ -61,19 +61,16 @@
       static const double Leg1 = 18;                // ShoulderChannels are no longer symmetric
       static const double Leg2 = 14;
       
-      static const double AHVO = 3;
-      static const double AHRO = 1;
-      static const double ARVO = 2;
-      static const double ARRO = 4.5;
-      static const double AMHG = sqrt(pow(AHVO,2) + pow(AHRO,2));   // root(10)
-      static const double AMRG = sqrt(pow(ARVO,2) + pow((Leg1 - ARRO),2));    // root(186.25)
-      static const double MountComponentAngle = atan(AHVO/AHRO) * toDegrees;
-      static const double LegComponentAngle = atan(ARVO/(Leg1 - ARRO)) * toDegrees;
+    /** Linear Servo Parameters */
+      static const double AHVO = 3;                 // Actuator Head Vertical Offset
+      static const double AHRO = 1;                 // Actuator Head Radial Offset
+      static const double ARVO = 2;                 // Actuator Rod Vertical Offset
+      static const double ARRO = 4.5;               // Actuator Rod Radial Offset
 
-      static const double ActMinPos = 12;
-      static const double ActMinCmd = 145;
-      static const double ActMaxPos = 16;
-      static const double ActMaxCmd = 20;
+      static const double ActMinPos = 12;           // Actuator length at minimum extension (within mechanical limits)
+      static const double ActMaxPos = 16;           // Actuator length at maximum extension (within mechanical limits) 
+      static const double ActMinCmd = 145;          // Actuator command corresponding to minimum extension (determined empirically)
+      static const double ActMaxCmd = 20;           // Actuator command corresponding to maximum extension (determined empirically)
 
     // Paremetric velocity constants
       static const double rinc = 0.25;              // Radial increment size
@@ -88,9 +85,13 @@
   /** --------------------------------------------------------------------------------------------------------------------------------------- */
 
     // Operating parameters determined by hardware limitations
+      static const double AMHG = sqrt(pow(AHVO,2) + pow(AHRO,2));   // Actuator Mount (Head-Side) Geometry (Hypotenuse = sqrt(10))
+      static const double AMRG = sqrt(pow(ARVO,2) + pow((Leg1 - ARRO),2));    // Actuator Mount (Rod-Side) Geometry (Hypotenuse = sqrt(186.25))
+      static const double MountComponentAngle = atan(AHVO/AHRO) * toDegrees;  //
+      static const double LegComponentAngle = atan(ARVO/(Leg1 - ARRO)) * toDegrees;
 
-    static const double ActPosRange = abs(ActMaxPos - ActMinPos);       // 4.0" in current configuration
-    static const double ActCmdRange = abs(ActMaxCmd - ActMinCmd);       // 125.0 in current configuration
+      static const double ActPosRange = abs(ActMaxPos - ActMinPos);       // 4.0" in current configuration
+      static const double ActCmdRange = abs(ActMaxCmd - ActMinCmd);       // 125.0 in current configuration
     
   /** These constants define the mininum and maximum acceptable analogRead() values produced
    *  by operating the joystick on the control board.
@@ -154,10 +155,8 @@
       int in, reset = 0;
       unsigned long timer;
       bool ClawState;
-      
-      double LSpos = 90;
-/** ------------------------------------------------------------------------------------------------------------------------------------------- */
 
+/** ------------------------------------------------------------------------------------------------------------------------------------------- */
 
 
 /** setup() Function
@@ -193,43 +192,18 @@ void loop() {
         in = GetInput();                              // Check for input (also records input for processing)
         if (++timer >= watchdog) {                    // Increment timer and check for timeout
           Serial.println("Power Down...");
-          PowerDown();                                // Power down arm
+          PowerUp();                                  // Power up arm (reset to home position)
           do {in = GetInput();} while (!in);          // Wait for input
-          PowerUp();                                  // Power up arm
         }
         delay(10);                                    // Process delay (also aides in debouncing inputs)
       } while (!in);                                  // End of input loop
+      
   /** Process Input
    *  Modifies claw coordinates according to control input.
    *  These values are subject to modification by boundary checks (below) before the arm is m
    *  See Also: GetInput() function comments (below)
   */
 
-/* DEBUG */
-      if (in == 5) {
-        LSpos++;
-        if (LSpos > 180) {
-          LSpos = 180;
-        }
-      }
-      if (in == 6) {      
-        LSpos--;
-        if (LSpos < 0){
-          LSpos = 0;
-        }
-      }
-      double moveDist = actuatorCommand(LSpos);
-      if (moveDist != -1) {vShoulderM.Move(moveDist);}
-      Serial.print("\t\tCommanded Angle: ");
-      Serial.println(LSpos);
-
-      //Serial.println(AMHG); 3.16
-      //Serial.println(AMRG); 13.65
-      //Serial.println(MountComponentAngle); 71.57
-      //Serial.println(LegComponentAngle); 8.43
-
-
-/* ********* DEBUG ******************
       if (in == 1)
         Coor->setR(Coor->R() + rinc);                 // increment radius (Extend Out)
       if (in == 2)
@@ -242,13 +216,11 @@ void loop() {
         Coor->setZ(Coor->Z() - zinc);                 // decrement z (Retract Up)
       if (in == 6)
         Coor->setZ(Coor->Z() + zinc);                 // increment z (Extend Down)
-************* END DEBUG ************* */
 
   /** Check Boundaries
    * Compares commanded arm position to exhibit boundaries and physical limitations of the arm.
    * If a boundary conflict is found, the parameter which violates the boundary is modified to equal the boundary.
    */
-/* ******** DEBUG ***********  
     // Check Exhibit Boundaries
       if (Coor->Z() > FLOORBOUND)                                 // Floor Bound
         Coor->setZ(FLOORBOUND);
@@ -273,11 +245,10 @@ void loop() {
         Coor->setR(rmin);
       if (Coor->Z() < zmin)                                       // Check for vertical overextension
         Coor->setZ(zmin);
-******** END DEBUG *********** */
+
+  
   /** Move arm to modified commanded position */
- /* ***DEBUG     UpdatePositions();
-  * 
-  */
+      UpdatePositions();
 }
 
 /** ------------------------------------------------------------------------------------------------------------------------------------------- */
@@ -290,6 +261,13 @@ void loop() {
  * Also provides basic serial debugging output.
  */
 void UpdatePositions() {
+/* Linear actuator positioning
+      double moveDist = actuatorCommand(LSpos);
+      if (moveDist != -1) {vShoulderM.Move(moveDist);}
+      Serial.print("\t\tCommanded Angle: ");
+      Serial.println(LSpos);
+*/
+  
   // Calculate joint angles
     double elbow = 2 * acos(sqrt(pow(Coor->R(), 2) + pow(Coor->Z(), 2)) / (2 * Leg));   // elbow = arccos(root(r^2+z^2)/(2*Leg))
     if (isnan(elbow)) {                                                                 // Check for undefined result
