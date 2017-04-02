@@ -36,30 +36,31 @@
   /** NOTE: All spatial references (left, right, etc.) are indicated observing the arm from the base toward the opposing wall of the exhibit. */
   /** vvvvvvvvvv     BEGIN ADJUSTABLE PARAMETERS     vvvvvvvvvvv */
   
-    // Exhibit boundaries
-      static const double LBOUND = -22;             // Sets the leftmost claw range in inches from center //-16
-      static const double RBOUND = 16;              // Sets the rightmost claw range in inches from center //16
-      static const double FBOUND = 40;              // Sets the forwardmost claw range in inches from center //40
-      static const double FLOORBOUND = 30;          // Sets the lowest claw range in inches from center //12
+    // Exhibit boundaries - Dimensions 45(F)x38(L+R)x16(FLOOR)
+      static const double LBOUND = -22;             // Sets the leftmost claw range in inches from center
+      static const double RBOUND = 16;              // Sets the rightmost claw range in inches from center
+      static const double FBOUND = 40;              // Sets the forwardmost claw range in inches from center
+      static const double FLOORBOUND = 16;          // Sets the lowest claw range in inches from center
+      static const double PADDING = 3;              // Spatial buffer for all boundaries
     
     // Initial coordinates
-      static const double rinit = 14;               // Initial claw radius
+      static const double rinit = 18;               // Initial claw radius
       static const double tinit = M_PI / 2;         // Initial rotation (pi/2 = 90* = centered)
       static const double zinit = 3;                // Initial height
 
     /** The remaining parameters below are modifiable, but modification is NOT RECOMMENDED without full calculations. */
     // Mechanical boundaries & parameters
-      static const int thetamin = 0 * toRadians;    // Sets the rightmost mechanical rotation limit
-      static const int thetamax = 180 * toRadians;  // Sets the leftmost mechanical rotation limit
-      static const int rmin = 12;                   // Sets the minimum distance from claw to origin
-      static const int zmin = 0;                    /* Sets the vertical claw limit.
-                                                     * MUST BE NON-NEGATIVE (Causes trig error -> erratic behavior). */
-      static const double SOffset = 4;              // Linear offset from hShoulder to vShoulder rotational axes
+      static const double AxesOffset = 3;           // Linear offset from hShoulder to vShoulder rotational axes
       static const double MountOffset = 3.75;       // Linear offset from mount wall to horizontal rotation axis
-      static const double Leg = 18;                 /* Symmetric length between servos - single channel length
-                                                     * NOTE: Shoulder->Elbow & Elbow->Claw channels must be identical length. */
+      //static const double Leg = 18;                 /* Symmetric length between servos - single channel length */
+                                                     /* NOTE: Shoulder->Elbow & Elbow->Claw channels must be identical length. */
       static const double Leg1 = 18;                // ShoulderChannels are no longer symmetric
       static const double Leg2 = 14;
+      static const int thetamin = 0 * toRadians;    // Sets the rightmost mechanical rotation limit
+      static const int thetamax = 180 * toRadians;  // Sets the leftmost mechanical rotation limit
+      static const int rmin = AxesOffset + 1;       // Sets the minimum distance from claw to origin
+      static const int zmin = 0;                    /* Sets the vertical claw limit.
+                                                     * MUST BE NON-NEGATIVE (Causes trig error -> erratic behavior). */
       
     /** Linear Servo Parameters */
       static const double AHVO = 3;                 // Actuator Head Vertical Offset
@@ -119,8 +120,8 @@
      *  causes a boundary violation in a different coordinate variable.
      *  These thresholds are expressed in Radians.
      */
-      static const double RSECTOR = atan2(FBOUND, RBOUND);
-      static const double LSECTOR = atan2(FBOUND, LBOUND);
+      static const double RSECTOR = atan2(FBOUND - MountOffset, RBOUND);
+      static const double LSECTOR = atan2(FBOUND - MountOffset, LBOUND);
   
   /** Hardware digital I/O pin assignments */
     // Control Inputs
@@ -224,12 +225,12 @@ void loop() {
     // Check Exhibit Boundaries
       if (Coor->Z() > FLOORBOUND)                                 // Floor Bound
         Coor->setZ(FLOORBOUND);
-      if ((Coor->T() < RSECTOR) && (Coor->X() >= RBOUND))         // Right Boundary
-        Coor->setX(RBOUND);
-      else if ((Coor->T() > LSECTOR) && (Coor->X() <= LBOUND))    // Left Boundary
-        Coor->setX(LBOUND);
-      else if (Coor->Y() >= FBOUND)                               // Front Boundary
-        Coor->setY(FBOUND);
+      if ((Coor->T() < RSECTOR) && (Coor->X() >= (RBOUND - PADDING)))         // Right Boundary
+        Coor->setX(RBOUND - PADDING);
+      else if ((Coor->T() > LSECTOR) && (Coor->X() <= (LBOUND - PADDING)))    // Left Boundary
+        Coor->setX(LBOUND - PADDING);
+      else if (Coor->Y() >= (FBOUND - (MountOffset + PADDING)))                               // Front Boundary
+        Coor->setY(FBOUND - PADDING);
 
     // Check Arm Mechanical Limitations
       if (Coor->T() < thetamin)                                   // Check rightmost mechanical rotation limit
@@ -237,9 +238,8 @@ void loop() {
       if (Coor->T() > thetamax)                                   // Check leftmost mechanical rotation limit
         Coor->setT(thetamax);
         
-      // *** The following limit check does not incorporate the mounting offset
-      if (Coor->R() >= (2 * Leg))                                 // Check for radial overextension
-        Coor->setR((2 * Leg) - 1);
+      if (Coor->R() >= (Leg1 + Leg2 + AxesOffset - rinc))         // Check for radial overextension
+        Coor->setR((Leg1 + Leg2 + AxesOffset) - rinc);
         
       if (Coor->R() < rmin)                                       // Check for overfolding of elbow
         Coor->setR(rmin);
@@ -263,12 +263,12 @@ void loop() {
 void UpdatePositions() {
   
   // Calculate joint angles (updated 02APR2017 using Law of Cosines) 
-    double RZHyp = sqrt(pow(Coor->R(), 2) + pow(Coor->Z(), 2));                         // Find imaginary hypotenuse of claw coordinate
+    double RZHyp = sqrt(pow(Coor->R() - AxesOffset, 2) + pow(Coor->Z(), 2));                         // Find imaginary hypotenuse of claw coordinate
 
-    double elbow = 180 - acos((pow(Leg1, 2) + pow(Leg2, 2) - pow(RZHyp,2)) / (2 * Leg1 * Leg2));
+    double elbow = acos((pow(Leg1, 2) + pow(Leg2, 2) - pow(RZHyp,2)) / (2 * Leg1 * Leg2));
 
     // Shoulder angle is the sum of two component angles formed by the arm (after 
-    double shoulder = asin(Coor->R() / RZHyp) + acos((pow(RZHyp, 2) + pow(Leg1, 2) - pow(Leg2, 2))/(2 * RZHyp * Leg1));
+    double shoulder = asin((Coor->R() - AxesOffset) / RZHyp) + acos((pow(RZHyp, 2) + pow(Leg1, 2) - pow(Leg2, 2))/(2 * RZHyp * Leg1));
    
     elbow *= toDegrees;                                                                 // Convert elbow angle to degrees
     shoulder *= toDegrees;                                                              // Convert shoulder angle to degrees
@@ -284,8 +284,8 @@ void UpdatePositions() {
       return;
     }
     
-   if (elbow > 125)                                                                     // Elbow mechanical hard-limit - Folding. (Added 8/20/2015)
-     elbow = 125;
+   //if (elbow > 125)                                                                     // Elbow mechanical hard-limit - Folding. (Added 8/20/2015)
+     //elbow = 125;
    Serial.println("(r,t,z): (" + String(Coor->R()) + "," + String(Coor->T()) + "," + String(Coor->Z()) + ")   " + "Elbow: " + String(elbow) + "   Shoulder: " + String(shoulder));
   
   // Linear actuator positioning
@@ -320,7 +320,7 @@ void PowerUp() {
     ClawState = false;
     reset = 0;
     UpdatePositions();
-    delay(2000);
+    //delay(2000);
     blinkLED(false);
 }
 
