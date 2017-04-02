@@ -39,7 +39,7 @@
     // Exhibit boundaries - Dimensions 45(F)x38(L+R)x16(FLOOR)
       static const double LBOUND = -22;             // Sets the leftmost claw range in inches from center
       static const double RBOUND = 16;              // Sets the rightmost claw range in inches from center
-      static const double FBOUND = 40;              // Sets the forwardmost claw range in inches from center
+      static const double FBOUND = 45;              // Sets the forwardmost claw range in inches from center
       static const double FLOORBOUND = 16;          // Sets the lowest claw range in inches from center
       static const double PADDING = 3;              // Spatial buffer for all boundaries
     
@@ -76,7 +76,7 @@
     // Paremetric velocity constants
       static const double rinc = 0.25;              // Radial increment size
       static const double thetainc = M_PI / 128;    // Rotational increment size
-      static const double zinc = 0.2;               // Vertical increment size
+      static const double zinc = 0.1;               // Vertical increment size
 
     // Firmware execution constants
       static const unsigned long watchdog = 15000;  // Inactivity period for power-down. 15000 = 5 minutes
@@ -156,7 +156,7 @@
       int in, reset = 0;
       unsigned long timer;
       bool ClawState;
-
+      double lastElbow, lastShoulder, lastR, lastT, lastZ = 0;
 /** ------------------------------------------------------------------------------------------------------------------------------------------- */
 
 
@@ -204,7 +204,9 @@ void loop() {
    *  These values are subject to modification by boundary checks (below) before the arm is m
    *  See Also: GetInput() function comments (below)
   */
-
+      lastR = Coor->R();
+      lastT = Coor->T();
+      lastZ = Coor->Z();
       if (in == 1)
         Coor->setR(Coor->R() + rinc);                 // increment radius (Extend Out)
       if (in == 2)
@@ -230,7 +232,7 @@ void loop() {
       else if ((Coor->T() > LSECTOR) && (Coor->X() <= (LBOUND - PADDING)))    // Left Boundary
         Coor->setX(LBOUND - PADDING);
       else if (Coor->Y() >= (FBOUND - (MountOffset + PADDING)))                               // Front Boundary
-        Coor->setY(FBOUND - PADDING);
+        Coor->setY(FBOUND - (MountOffset + PADDING));
 
     // Check Arm Mechanical Limitations
       if (Coor->T() < thetamin)                                   // Check rightmost mechanical rotation limit
@@ -238,8 +240,8 @@ void loop() {
       if (Coor->T() > thetamax)                                   // Check leftmost mechanical rotation limit
         Coor->setT(thetamax);
         
-      if (Coor->R() >= (Leg1 + Leg2 + AxesOffset - rinc))         // Check for radial overextension
-        Coor->setR((Leg1 + Leg2 + AxesOffset) - rinc);
+      if (Coor->R() >= (Leg1 + Leg2 + AxesOffset - 1))         // Check for radial overextension
+        Coor->setR(Leg1 + Leg2 + AxesOffset - 1);
         
       if (Coor->R() < rmin)                                       // Check for overfolding of elbow
         Coor->setR(rmin);
@@ -264,16 +266,26 @@ void UpdatePositions() {
   
   // Calculate joint angles (updated 02APR2017 using Law of Cosines) 
     double RZHyp = sqrt(pow(Coor->R() - AxesOffset, 2) + pow(Coor->Z(), 2));                         // Find imaginary hypotenuse of claw coordinate
-
+    if (RZHyp > (Leg1 + Leg2 - 1)){
+      RZHyp = Leg1 + Leg2 - 1;
+      Coor->setR(lastR);
+      Coor->setZ(lastZ);
+    }
+    Serial.println("RZHyp: " + String(RZHyp) + "   R: " + String(Coor->R()) + "   Z: " + String(Coor->Z()));
     double elbow = acos((pow(Leg1, 2) + pow(Leg2, 2) - pow(RZHyp,2)) / (2 * Leg1 * Leg2));
 
     // Shoulder angle is the sum of two component angles formed by the arm (after 
     double shoulder = asin((Coor->R() - AxesOffset) / RZHyp) + acos((pow(RZHyp, 2) + pow(Leg1, 2) - pow(Leg2, 2))/(2 * RZHyp * Leg1));
-   
+    
     elbow *= toDegrees;                                                                 // Convert elbow angle to degrees
     shoulder *= toDegrees;                                                              // Convert shoulder angle to degrees
 
-    
+    if (isnan(elbow)){
+      elbow = lastElbow;
+    }
+    if (isnan(shoulder)){
+      shoulder = lastShoulder;
+    }
     
     
     if (isnan(elbow) || isnan(shoulder)) {                                           // Check for undefined result
@@ -284,20 +296,23 @@ void UpdatePositions() {
       return;
     }
     
-   //if (elbow > 125)                                                                     // Elbow mechanical hard-limit - Folding. (Added 8/20/2015)
-     //elbow = 125;
+   if (elbow < 45){                                                                     // Elbow mechanical hard-limit - Folding. (Added 8/20/2015)
+     elbow = 45;
+   }
    Serial.println("(r,t,z): (" + String(Coor->R()) + "," + String(Coor->T()) + "," + String(Coor->Z()) + ")   " + "Elbow: " + String(elbow) + "   Shoulder: " + String(shoulder));
   
   // Linear actuator positioning
       double ActCmd = actuatorCommand(shoulder);
-
+  lastShoulder = shoulder;
+  lastElbow = elbow;
+  
   // Move servos
     hShoulder.Move(Coor->T() * toDegrees);
     if (ActCmd != -1) {vShoulderM.Move(ActCmd);}
     // vShoulderM.Move(shoulder);
     // vShoulderS.Move(shoulder);
-    ElbowM.Move(elbow);
-    ElbowS.Move(elbow);
+    ElbowM.Move(180 - elbow);
+    ElbowS.Move(180 - elbow);
     Claw.Move(ClawState);
 }
 
@@ -403,16 +418,20 @@ double actuatorCommand(double angle){
   double ActuatorComponentAngle = 360 - (MountComponentAngle + LegComponentAngle + 90 + angle);
   double ActuatorLength = sqrt(pow(AMHG,2) + pow(AMRG,2) - (2 * AMHG * AMRG * cos(ActuatorComponentAngle * toRadians)));
   double ActuatorCommand = (ActMaxPos - ActuatorLength) * (ActCmdRange / ActPosRange)+ ActMaxCmd;
-  if ((ActuatorLength >= ActMinPos) && (ActuatorLength <= ActMaxPos)){
-    return ActuatorCommand;
+  if (ActuatorLength < ActMinPos) {
+    return ActMinCmd;
+  }
+  else if (ActuatorLength > ActMaxPos) {
+    return ActMaxPos;
   } else {
-    Serial.println("***********************");
-    Serial.println("Error in actuatorCommand() Function, argument out of range");
-    Serial.println(ActuatorComponentAngle);
-    Serial.println(ActuatorLength);
-    Serial.println(ActuatorCommand);
-    Serial.println("***********************");
-    return -1;
+    
+//    Serial.println("***********************");
+//    Serial.println("Error in actuatorCommand() Function, argument out of range");
+//    Serial.println(ActuatorComponentAngle);
+//    Serial.println(ActuatorLength);
+//    Serial.println(ActuatorCommand);
+//    Serial.println("***********************");
+    return ActuatorCommand;
   }
 }
 
