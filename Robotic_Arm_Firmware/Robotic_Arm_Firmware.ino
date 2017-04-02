@@ -1,23 +1,22 @@
 /** ------------------------------------------------------------------------------------------------------------------------------------------- */
 /*
- * Firmware:      Robotic Arm Exhibit v1.1.2
+ * Firmware:      Robotic Arm Exhibit v1.1.3
  * Description:   Cylindrical-coordinate control system
  * Location:      Virginia Beach Marine Science Center
  *                "Reaching Out for Clues" Exhibit
  * Author:        Imran A. Uddin
  *                Old Dominion University
- * Version:       1.1.2
+ * Version:       1.1.3
  * Major:         20AUG2014
  * Minor:         20AUG2015
- * Revision:      22FEB2017
- *                Added comments, adjusted structure and format.
- *                No operational changes in this revision.
+ * Revision:      02APR2017
+ *                Parameter and operational modifications
  * Includes:      Robotic_Arm_Firmware.ino (this file)
  *                joint.h
  *                joint.cpp
  *                coor.h
  *                coor.cpp
- * Verified IDEs: Arduino v1.6.3, v1.6.5
+ * Verified IDEs: v1.6.5
  */
 /** ------------------------------------------------------------------------------------------------------------------------------------------- */
 
@@ -38,10 +37,10 @@
   /** vvvvvvvvvv     BEGIN ADJUSTABLE PARAMETERS     vvvvvvvvvvv */
   
     // Exhibit boundaries
-      static const double LBOUND = -16;             // Sets the leftmost claw range in inches from center
-      static const double RBOUND = 16;              // Sets the rightmost claw range in inches from center
-      static const double FBOUND = 40;              // Sets the forwardmost claw range in inches from center
-      static const double FLOORBOUND = 12;          // Sets the lowest claw range in incheas from center
+      static const double LBOUND = -22;             // Sets the leftmost claw range in inches from center //-16
+      static const double RBOUND = 16;              // Sets the rightmost claw range in inches from center //16
+      static const double FBOUND = 40;              // Sets the forwardmost claw range in inches from center //40
+      static const double FLOORBOUND = 30;          // Sets the lowest claw range in inches from center //12
     
     // Initial coordinates
       static const double rinit = 14;               // Initial claw radius
@@ -56,12 +55,29 @@
       static const int zmin = 0;                    /* Sets the vertical claw limit.
                                                      * MUST BE NON-NEGATIVE (Causes trig error -> erratic behavior). */
       static const double SOffset = 4;              // Linear offset from hShoulder to vShoulder rotational axes
+      static const double MountOffset = 3.75;       // Linear offset from mount wall to horizontal rotation axis
       static const double Leg = 18;                 /* Symmetric length between servos - single channel length
                                                      * NOTE: Shoulder->Elbow & Elbow->Claw channels must be identical length. */
+      static const double Leg1 = 18;                // ShoulderChannels are no longer symmetric
+      static const double Leg2 = 14;
+      
+      static const double AHVO = 3;
+      static const double AHRO = 1;
+      static const double ARVO = 2;
+      static const double ARRO = 4.5;
+      static const double AMHG = sqrt(pow(AHVO,2) + pow(AHRO,2));   // root(10)
+      static const double AMRG = sqrt(pow(ARVO,2) + pow((Leg1 - ARRO),2));    // root(186.25)
+      static const double MountComponentAngle = atan(AHVO/AHRO) * toDegrees;
+      static const double LegComponentAngle = atan(ARVO/(Leg1 - ARRO)) * toDegrees;
+
+      static const double ActMinPos = 12;
+      static const double ActMinCmd = 145;
+      static const double ActMaxPos = 16;
+      static const double ActMaxCmd = 20;
 
     // Paremetric velocity constants
       static const double rinc = 0.25;              // Radial increment size
-      static const double thetainc = 0.0061086523;  // Rotational increment size
+      static const double thetainc = M_PI / 128;    // Rotational increment size
       static const double zinc = 0.2;               // Vertical increment size
 
     // Firmware execution constants
@@ -71,7 +87,11 @@
   /** ^^^^^^^^^^      END ADJUSTABLE PARAMETERS      ^^^^^^^^^^ */
   /** --------------------------------------------------------------------------------------------------------------------------------------- */
 
+    // Operating parameters determined by hardware limitations
 
+    static const double ActPosRange = abs(ActMaxPos - ActMinPos);       // 4.0" in current configuration
+    static const double ActCmdRange = abs(ActMaxCmd - ActMinCmd);       // 125.0 in current configuration
+    
   /** These constants define the mininum and maximum acceptable analogRead() values produced
    *  by operating the joystick on the control board.
    *  They were determined by repeated trials and modified to provide reasonable thresholds.
@@ -134,8 +154,11 @@
       int in, reset = 0;
       unsigned long timer;
       bool ClawState;
-
+      
+      double LSpos = 90;
 /** ------------------------------------------------------------------------------------------------------------------------------------------- */
+
+
 
 /** setup() Function
  * Arduino Initialization
@@ -176,12 +199,37 @@ void loop() {
         }
         delay(10);                                    // Process delay (also aides in debouncing inputs)
       } while (!in);                                  // End of input loop
-
   /** Process Input
    *  Modifies claw coordinates according to control input.
-   *  These values are subject to modification by boundary checks (below) before the arm is moved.
+   *  These values are subject to modification by boundary checks (below) before the arm is m
    *  See Also: GetInput() function comments (below)
   */
+
+/* DEBUG */
+      if (in == 5) {
+        LSpos++;
+        if (LSpos > 180) {
+          LSpos = 180;
+        }
+      }
+      if (in == 6) {      
+        LSpos--;
+        if (LSpos < 0){
+          LSpos = 0;
+        }
+      }
+      double moveDist = actuatorCommand(LSpos);
+      if (moveDist != -1) {vShoulderM.Move(moveDist);}
+      Serial.print("\t\tCommanded Angle: ");
+      Serial.println(LSpos);
+
+      //Serial.println(AMHG); 3.16
+      //Serial.println(AMRG); 13.65
+      //Serial.println(MountComponentAngle); 71.57
+      //Serial.println(LegComponentAngle); 8.43
+
+
+/* ********* DEBUG ******************
       if (in == 1)
         Coor->setR(Coor->R() + rinc);                 // increment radius (Extend Out)
       if (in == 2)
@@ -194,12 +242,13 @@ void loop() {
         Coor->setZ(Coor->Z() - zinc);                 // decrement z (Retract Up)
       if (in == 6)
         Coor->setZ(Coor->Z() + zinc);                 // increment z (Extend Down)
+************* END DEBUG ************* */
 
   /** Check Boundaries
    * Compares commanded arm position to exhibit boundaries and physical limitations of the arm.
    * If a boundary conflict is found, the parameter which violates the boundary is modified to equal the boundary.
    */
-   
+/* ******** DEBUG ***********  
     // Check Exhibit Boundaries
       if (Coor->Z() > FLOORBOUND)                                 // Floor Bound
         Coor->setZ(FLOORBOUND);
@@ -224,9 +273,11 @@ void loop() {
         Coor->setR(rmin);
       if (Coor->Z() < zmin)                                       // Check for vertical overextension
         Coor->setZ(zmin);
-
+******** END DEBUG *********** */
   /** Move arm to modified commanded position */
-      UpdatePositions();
+ /* ***DEBUG     UpdatePositions();
+  * 
+  */
 }
 
 /** ------------------------------------------------------------------------------------------------------------------------------------------- */
@@ -234,7 +285,8 @@ void loop() {
 /** UpdatePositions() Function
  * Calculates required servo commands.
  * Peforms final mathematical/boundary checks to ensure valid positioning
- * Moves servos to modified commanded position.
+ * Moves servos to 
+ * modified commanded position.
  * Also provides basic serial debugging output.
  */
 void UpdatePositions() {
@@ -363,6 +415,24 @@ int GetInput() {
     }
   }
   return 0;
+}
+
+double actuatorCommand(double angle){
+
+  double ActuatorComponentAngle = 360 - (MountComponentAngle + LegComponentAngle + 90 + angle);
+  double ActuatorLength = sqrt(pow(AMHG,2) + pow(AMRG,2) - (2 * AMHG * AMRG * cos(ActuatorComponentAngle * toRadians)));
+  double ActuatorCommand = (ActMaxPos - ActuatorLength) * (ActCmdRange / ActPosRange)+ ActMaxCmd;
+  if ((ActuatorLength >= ActMinPos) && (ActuatorLength <= ActMaxPos)){
+    return ActuatorCommand;
+  } else {
+    Serial.println("***********************");
+    Serial.println("Error in actuatorCommand() Function, argument out of range");
+    Serial.println(ActuatorComponentAngle);
+    Serial.println(ActuatorLength);
+    Serial.println(ActuatorCommand);
+    Serial.println("***********************");
+    return -1;
+  }
 }
 
 /** blinkLED() Function
