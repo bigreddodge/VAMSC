@@ -261,38 +261,41 @@ void loop() {
  * Also provides basic serial debugging output.
  */
 void UpdatePositions() {
-/* Linear actuator positioning
-      double moveDist = actuatorCommand(LSpos);
-      if (moveDist != -1) {vShoulderM.Move(moveDist);}
-      Serial.print("\t\tCommanded Angle: ");
-      Serial.println(LSpos);
-*/
   
-  // Calculate joint angles
-    double elbow = 2 * acos(sqrt(pow(Coor->R(), 2) + pow(Coor->Z(), 2)) / (2 * Leg));   // elbow = arccos(root(r^2+z^2)/(2*Leg))
-    if (isnan(elbow)) {                                                                 // Check for undefined result
-      elbow = 0;                                                                        // Reset to real number
-      Serial.println("ELBOW COMMANDED TO NAN");
-    }
-    
-    double shoulder = (elbow / 2) + atan(Coor->R() / Coor->Z());                        // shoulder = (elbow/2)+arctan(r/z)
-    if (isnan(shoulder)) {                                                              // Check for undefined result
-      shoulder = 179 * toRadians;                                                       // Reset to real number
-      Serial.println("SHOULDER COMMANDED TO NAN");
-    }
-    
+  // Calculate joint angles (updated 02APR2017 using Law of Cosines) 
+    double RZHyp = sqrt(pow(Coor->R(), 2) + pow(Coor->Z(), 2));                         // Find imaginary hypotenuse of claw coordinate
+
+    double elbow = 180 - acos((pow(Leg1, 2) + pow(Leg2, 2) - pow(RZHyp,2)) / (2 * Leg1 * Leg2));
+
+    // Shoulder angle is the sum of two component angles formed by the arm (after 
+    double shoulder = asin(Coor->R() / RZHyp) + acos((pow(RZHyp, 2) + pow(Leg1, 2) - pow(Leg2, 2))/(2 * RZHyp * Leg1));
+   
     elbow *= toDegrees;                                                                 // Convert elbow angle to degrees
     shoulder *= toDegrees;                                                              // Convert shoulder angle to degrees
+
+    
+    
+    
+    if (isnan(elbow) || isnan(shoulder)) {                                           // Check for undefined result
+      Serial.print("Undefined angle commanded. Shoulder: ");
+      Serial.print(shoulder);
+      Serial.print("   Elbow: ");
+      Serial.println(elbow);
+      return;
+    }
     
    if (elbow > 125)                                                                     // Elbow mechanical hard-limit - Folding. (Added 8/20/2015)
      elbow = 125;
-   Serial.println("Elbow: " + String(elbow) + "    Shoulder:" + String(shoulder));
-  // "(r,t,z):" Coor->R Coor->T Coor->Z "(x,y,z)" Coor->X Coor->Y Coor-Z
+   Serial.println("(r,t,z): (" + String(Coor->R()) + "," + String(Coor->T()) + "," + String(Coor->Z()) + ")   " + "Elbow: " + String(elbow) + "   Shoulder: " + String(shoulder));
   
+  // Linear actuator positioning
+      double ActCmd = actuatorCommand(shoulder);
+
   // Move servos
     hShoulder.Move(Coor->T() * toDegrees);
-    vShoulderM.Move(shoulder);
-    vShoulderS.Move(shoulder);
+    if (ActCmd != -1) {vShoulderM.Move(ActCmd);}
+    // vShoulderM.Move(shoulder);
+    // vShoulderS.Move(shoulder);
     ElbowM.Move(elbow);
     ElbowS.Move(elbow);
     Claw.Move(ClawState);
