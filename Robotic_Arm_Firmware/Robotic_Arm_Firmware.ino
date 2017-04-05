@@ -316,6 +316,9 @@ void UpdatePositions() {
     Claw.Move(ClawState);
 }
 
+/** --------------------------------------------------------------------------------------------------------------------------------------- */
+/** Trig Functions */
+
 double LoCAngleDEG(double Adj1, double Adj2, double Opp){
   return (acos((pow(Adj1, 2) + pow(Adj2, 2) - pow(Opp, 2)) / (2 * Adj1 * Adj2)) * toDegrees);
 }
@@ -323,6 +326,16 @@ double LoCAngleDEG(double Adj1, double Adj2, double Opp){
 double LoCOppSide(double AngleDEG, double Adj1, double Adj2){
   return sqrt(pow(Adj1, 2) + pow(Adj2, 2) - (2 * cos(AngleDEG * toRadians) * Adj1 * Adj2));
 }
+
+double PythagH(double L1, double L2){
+  return sqrt(pow(L1, 2) + pow(L2, 2));
+}
+
+double PythagL(double H, double L){
+  return sqrt(pow(H, 2) - pow(L, 2));
+}
+
+/** --------------------------------------------------------------------------------------------------------------------------------------- */
 
 /** PowerUp() Function
  * Enables control of arm servos, energizing them to starting positions.
