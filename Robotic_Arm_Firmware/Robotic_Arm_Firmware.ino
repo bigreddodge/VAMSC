@@ -316,6 +316,14 @@ void UpdatePositions() {
     Claw.Move(ClawState);
 }
 
+double LoCAngleDEG(double Adj1, double Adj2, double Opp){
+  return (acos((pow(Adj1, 2) + pow(Adj2, 2) - pow(Opp, 2)) / (2 * Adj1 * Adj2)) * toDegrees);
+}
+
+double LoCOppSide(double AngleDEG, double Adj1, double Adj2){
+  return sqrt(pow(Adj1, 2) + pow(Adj2, 2) - (2 * cos(AngleDEG * toRadians) * Adj1 * Adj2));
+}
+
 /** PowerUp() Function
  * Enables control of arm servos, energizing them to starting positions.
  */
@@ -445,4 +453,5 @@ void blinkLED(bool state) {
   }
   digitalWrite(LightPin, state);
 }
+
 
