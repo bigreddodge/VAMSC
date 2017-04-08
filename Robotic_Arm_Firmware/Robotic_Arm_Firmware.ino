@@ -41,7 +41,7 @@
       static const double RBOUND = 16;              // Sets the rightmost claw range in inches from center
       static const double FBOUND = 45;              // Sets the forwardmost claw range in inches from center
       static const double FLOORBOUND = 16;          // Sets the lowest claw range in inches from center
-      static const double PADDING = 3;              // Spatial buffer for all boundaries
+      static const double PADDING = 1;              // Spatial buffer for all boundaries
     
     // Initial coordinates
       static const double rinit = 18;               // Initial claw radius
@@ -52,15 +52,15 @@
     // Mechanical boundaries & parameters
       static const double AxesOffset = 3;           // Linear offset from hShoulder to vShoulder rotational axes
       static const double MountOffset = 3.75;       // Linear offset from mount wall to horizontal rotation axis
-      //static const double Leg = 18;                 /* Symmetric length between servos - single channel length */
-                                                     /* NOTE: Shoulder->Elbow & Elbow->Claw channels must be identical length. */
       static const double Leg1 = 18;                // ShoulderChannels are no longer symmetric
       static const double Leg2 = 14;
       static const int thetamin = 0 * toRadians;    // Sets the rightmost mechanical rotation limit
       static const int thetamax = 180 * toRadians;  // Sets the leftmost mechanical rotation limit
-      static const int rmin = AxesOffset + 1;       // Sets the minimum distance from claw to origin
-      static const int zmin = 0;                    /* Sets the vertical claw limit.
+      static const double rmin = AxesOffset + 1;       // Sets the minimum distance from claw to origin
+      static const double zmin = 0.0;               /* Sets the vertical claw limit.
                                                      * MUST BE NON-NEGATIVE (Causes trig error -> erratic behavior). */
+
+      static const double ElbowMinAngle = 45.0;     // Elbow folding mechanical limit.
       
     /** Linear Servo Parameters */
       static const double AHVO = 3;                 // Actuator Head Vertical Offset
@@ -220,34 +220,55 @@ void loop() {
       if (in == 6)
         Coor->setZ(Coor->Z() + zinc);                 // increment z (Extend Down)
 
-  /** Check Boundaries
-   * Compares commanded arm position to exhibit boundaries and physical limitations of the arm.
-   * If a boundary conflict is found, the parameter which violates the boundary is modified to equal the boundary.
+  /** Check Claw Position Boundaries
+   * Compares commanded claw position to exhibit boundaries and physical limitations of the arm.
+   * If a boundary conflict is found, the parameter which violates the boundary is modified to equal the boundary,
+   * which may cause other parameters to change such that all boundary limits are satisfied.
    */
-    // Check Exhibit Boundaries
-      if (Coor->Z() > FLOORBOUND)                                 // Floor Bound
-        Coor->setZ(FLOORBOUND);
-      if ((Coor->T() < RSECTOR) && (Coor->X() >= (RBOUND - PADDING)))         // Right Boundary
-        Coor->setX(RBOUND - PADDING);
-      else if ((Coor->T() > LSECTOR) && (Coor->X() <= (LBOUND - PADDING)))    // Left Boundary
-        Coor->setX(LBOUND - PADDING);
-      else if (Coor->Y() >= (FBOUND - (MountOffset + PADDING)))                               // Front Boundary
-        Coor->setY(FBOUND - (MountOffset + PADDING));
 
-    // Check Arm Mechanical Limitations
+    /** Exhibit boundary check.
+     *  If the arm is commanded to exceed the boundary, the arm will stop.
+     */
+      if (Coor->Z() > FLOORBOUND)                                 // Check floor boundary
+        Coor->setZ(FLOORBOUND);
+      if (Coor->Z() < zmin)                                       // Check vertical height boundary
+        Coor->setZ(zmin);
       if (Coor->T() < thetamin)                                   // Check rightmost mechanical rotation limit
         Coor->setT(thetamin);
       if (Coor->T() > thetamax)                                   // Check leftmost mechanical rotation limit
         Coor->setT(thetamax);
-        
-      if (Coor->R() >= (Leg1 + Leg2 + AxesOffset - 1))         // Check for radial overextension
-        Coor->setR(Leg1 + Leg2 + AxesOffset - 1);
-        
       if (Coor->R() < rmin)                                       // Check for overfolding of elbow
         Coor->setR(rmin);
-      if (Coor->Z() < zmin)                                       // Check for vertical overextension
-        Coor->setZ(zmin);
 
+    /** Left/Right boundary checks. Modifies Cartesian X to allow continued arm movement.
+     *  If the arm is commanded to exceed a boundary, the X Cartesian component is held at the boundary,
+     *  allowing the Y Cartesian component to continue movement.
+     */
+      if ((Coor->T() > (90 * toRadians)) && (Coor->X() <= (LBOUND + PADDING)))
+        Coor->setX(LBOUND + PADDING);
+      if ((Coor->T() < (90 * toRadians)) && (Coor->X() >= (RBOUND - PADDING)))
+        Coor->setX(RBOUND - PADDING);
+        
+    /** Front boundary check. (Never exceeded in current configuration).
+     *  Modifies Cartesian Y to the boundary, allowing continued arm movement.
+     */
+      if (Coor->Y() > (FBOUND - (MountOffset + PADDING)))
+        Coor->setY(FBOUND - (MountOffset + PADDING));
+    
+    /** Check full-extension mechanical limitation.
+     *  Prevents the arm from being fully extended (linear).
+     */
+      double Phi = PythagH(Coor->R() - AxesOffset, Coor->Z());
+      if (Phi > (Leg1 + Leg2 - 1))         // Check for radial overextension
+        Coor->setR(PythagL((Leg1 + Leg2 - 1), Coor->Z()) + AxesOffset);
+
+    /** Check full-folding mechanical limitation. 
+     *  Limit the radius by calculating the minimum distance from the
+     *  vertical rotation axis to the claw according to the minimum elbow angle.
+     */
+      double minPhi = LoCOppSide(ElbowMinAngle, Leg1, Leg2);
+      if (Phi < minPhi)
+        Coor->setR(PythagL(minPhi, Coor->Z()) + AxesOffset);
   
   /** Move arm to modified commanded position */
       UpdatePositions();
@@ -296,8 +317,8 @@ void UpdatePositions() {
       return;
     }
     
-   if (elbow < 45){                                                                     // Elbow mechanical hard-limit - Folding. (Added 8/20/2015)
-     elbow = 45;
+   if (elbow < ElbowMinAngle){                                                       // Elbow mechanical hard-limit - Folding. (Added 8/20/2015)
+     elbow = ElbowMinAngle;
    }
    Serial.println("(r,t,z): (" + String(Coor->R()) + "," + String(Coor->T()) + "," + String(Coor->Z()) + ")   " + "Elbow: " + String(elbow) + "   Shoulder: " + String(shoulder));
   
