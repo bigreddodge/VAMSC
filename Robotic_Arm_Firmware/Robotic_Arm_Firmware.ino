@@ -26,7 +26,7 @@
 #include "coor.h"
 #include <string.h>
 
-/** Constant Declarations */
+/** Global Constant Declarations */
     // Unit conversion multiplier constants
       static const double toRadians = M_PI / 180;   // DEG -> RAD
       static const double toDegrees = 180 / M_PI;   // RAD -> DEG
@@ -120,8 +120,8 @@
      *  causes a boundary violation in a different coordinate variable.
      *  These thresholds are expressed in Radians.
      */
-      static const double RSECTOR = atan2(FBOUND - MountOffset, RBOUND);
-      static const double LSECTOR = atan2(FBOUND - MountOffset, LBOUND);
+      //static const double RSECTOR = atan2(FBOUND - MountOffset, RBOUND);
+      //static const double LSECTOR = atan2(FBOUND - MountOffset, LBOUND);
   
   /** Hardware digital I/O pin assignments */
     // Control Inputs
@@ -156,7 +156,7 @@
       int in, reset = 0;
       unsigned long timer;
       bool ClawState;
-      double lastElbow, lastShoulder, lastR, lastT, lastZ = 0;
+//      double lastElbow, lastShoulder, lastR, lastT, lastZ = 0;
 /** ------------------------------------------------------------------------------------------------------------------------------------------- */
 
 
@@ -204,9 +204,9 @@ void loop() {
    *  These values are subject to modification by boundary checks (below) before the arm is m
    *  See Also: GetInput() function comments (below)
   */
-      lastR = Coor->R();
-      lastT = Coor->T();
-      lastZ = Coor->Z();
+      //lastR = Coor->R();
+      //lastT = Coor->T();
+      //lastZ = Coor->Z();
       if (in == 1)
         Coor->setR(Coor->R() + rinc);                 // increment radius (Extend Out)
       if (in == 2)
@@ -258,17 +258,17 @@ void loop() {
     /** Check full-extension mechanical limitation.
      *  Prevents the arm from being fully extended (linear).
      */
-      double Phi = PythagH(Coor->R() - AxesOffset, Coor->Z());
-      if (Phi > (Leg1 + Leg2 - 1))         // Check for radial overextension
+      double ClawVector = PythagH(Coor->R() - AxesOffset, Coor->Z());
+      if (ClawVector > (Leg1 + Leg2 - 1))         // Check for radial overextension
         Coor->setR(PythagL((Leg1 + Leg2 - 1), Coor->Z()) + AxesOffset);
 
     /** Check full-folding mechanical limitation. 
      *  Limit the radius by calculating the minimum distance from the
      *  vertical rotation axis to the claw according to the minimum elbow angle.
      */
-      double minPhi = LoCOppSide(ElbowMinAngle, Leg1, Leg2);
-      if (Phi < minPhi)
-        Coor->setR(PythagL(minPhi, Coor->Z()) + AxesOffset);
+      double minClawVector = LoCOppSide(ElbowMinAngle, Leg1, Leg2);
+      if (ClawVector < minClawVector)
+        Coor->setR(PythagL(minClawVector, Coor->Z()) + AxesOffset);
   
   /** Move arm to modified commanded position */
       UpdatePositions();
@@ -284,7 +284,7 @@ void loop() {
  * Also provides basic serial debugging output.
  */
 void UpdatePositions() {
-  
+  /* Redundant. Remove.
   // Calculate joint angles (updated 02APR2017 using Law of Cosines) 
     double RZHyp = sqrt(pow(Coor->R() - AxesOffset, 2) + pow(Coor->Z(), 2));                         // Find imaginary hypotenuse of claw coordinate
     if (RZHyp > (Leg1 + Leg2 - 1)){
@@ -292,40 +292,55 @@ void UpdatePositions() {
       Coor->setR(lastR);
       Coor->setZ(lastZ);
     }
-    Serial.println("RZHyp: " + String(RZHyp) + "   R: " + String(Coor->R()) + "   Z: " + String(Coor->Z()));
-    double elbow = acos((pow(Leg1, 2) + pow(Leg2, 2) - pow(RZHyp,2)) / (2 * Leg1 * Leg2));
-
-    // Shoulder angle is the sum of two component angles formed by the arm (after 
-    double shoulder = asin((Coor->R() - AxesOffset) / RZHyp) + acos((pow(RZHyp, 2) + pow(Leg1, 2) - pow(Leg2, 2))/(2 * RZHyp * Leg1));
+    */
     
+    // Serial.println("RZHyp: " + String(RZHyp) + "   R: " + String(Coor->R()) + "   Z: " + String(Coor->Z()));
+    
+    
+    // Calculate vertical rotation axis to claw distance.
+      double ClawVector = PythagH(Coor->R() - AxesOffset, Coor->Z());
+    
+    /** Calculate elbow angle using Law of Cosines.
+     *  
+     */
+      // double elbow = acos((pow(Leg1, 2) + pow(Leg2, 2) - pow(RZHyp,2)) / (2 * Leg1 * Leg2));
+      double elbow = LoCAngleDEG(Leg1, Leg2, ClawVector);
+
+    /** Shoulder angle is the sum of two component angles formed by the arm.
+     *  
+     */
+      //double shoulder = asin((Coor->R() - AxesOffset) / RZHyp) + acos((pow(RZHyp, 2) + pow(Leg1, 2) - pow(Leg2, 2))/(2 * RZHyp * Leg1));
+      double shoulder = (asin((Coor->R() - AxesOffset) / ClawVector) * toDegrees) + LoCAngleDEG(ClawVector, Leg1, Leg2);
+    
+    /*
     elbow *= toDegrees;                                                                 // Convert elbow angle to degrees
     shoulder *= toDegrees;                                                              // Convert shoulder angle to degrees
-
     if (isnan(elbow)){
       elbow = lastElbow;
     }
     if (isnan(shoulder)){
       shoulder = lastShoulder;
     }
+    */
     
-    
-    if (isnan(elbow) || isnan(shoulder)) {                                           // Check for undefined result
+    /*if (isnan(elbow) || isnan(shoulder)) {                                           // Check for undefined result
       Serial.print("Undefined angle commanded. Shoulder: ");
       Serial.print(shoulder);
       Serial.print("   Elbow: ");
       Serial.println(elbow);
       return;
-    }
+    }*/
     
-   if (elbow < ElbowMinAngle){                                                       // Elbow mechanical hard-limit - Folding. (Added 8/20/2015)
+   /*if (elbow < ElbowMinAngle){                                                       // Elbow mechanical hard-limit - Folding. (Added 8/20/2015)
      elbow = ElbowMinAngle;
-   }
+   }*/
+
    Serial.println("(r,t,z): (" + String(Coor->R()) + "," + String(Coor->T()) + "," + String(Coor->Z()) + ")   " + "Elbow: " + String(elbow) + "   Shoulder: " + String(shoulder));
   
   // Linear actuator positioning
       double ActCmd = actuatorCommand(shoulder);
-  lastShoulder = shoulder;
-  lastElbow = elbow;
+  //lastShoulder = shoulder;
+  //lastElbow = elbow;
   
   // Move servos
     hShoulder.Move(Coor->T() * toDegrees);
@@ -336,6 +351,33 @@ void UpdatePositions() {
     ElbowS.Move(180 - elbow);
     Claw.Move(ClawState);
 }
+
+
+/** actuatorCommand() Function
+ *  Converts the specified angleDEG shoulder angle to a joint() object compatible linear actuator command
+ *  based on the hardware configuration geometry defined/calculated in the global constants section.
+ */
+double actuatorCommand(double angleDEG){
+  double ActuatorComponentAngle = 360 - (MountComponentAngle + LegComponentAngle + 90 + angleDEG);
+  
+  //double ActuatorLength = sqrt(pow(AMHG,2) + pow(AMRG,2) - (2 * AMHG * AMRG * cos(ActuatorComponentAngle * toRadians)));
+  double ActuatorLength = LoCOppSide(ActuatorComponentAngle, AMHG, AMRG);
+  
+  double ActuatorCommand = ((ActMaxPos - ActuatorLength) * (ActCmdRange / ActPosRange)) + ActMaxCmd;
+  
+  if (ActuatorLength < ActMinPos) {
+    Serial.print("\nActuator min-extension boundary violation!");
+    return ActMinCmd;
+  }
+  else if (ActuatorLength > ActMaxPos) {
+    Serial.print("\nActuator max-extension boundary violation!");
+    return ActMaxPos;
+  }
+  else {
+    return ActuatorCommand;
+  }
+}
+
 
 /** --------------------------------------------------------------------------------------------------------------------------------------- */
 /** Trig Functions */
@@ -357,50 +399,8 @@ double PythagL(double H, double L){
 }
 
 /** --------------------------------------------------------------------------------------------------------------------------------------- */
+/** Control Functions */
 
-/** PowerUp() Function
- * Enables control of arm servos, energizing them to starting positions.
- */
-void PowerUp() {
-  // Power-up
-    hShoulder.Start();
-    vShoulderM.Start();
-    vShoulderS.Start();
-    ElbowM.Start();
-    ElbowS.Start();
-    Claw.Start();
-
-  // Move to starting position
-    Coor->setR(rinit);
-    Coor->setT(tinit);
-    Coor->setZ(zinit);  
-    ClawState = false;
-    reset = 0;
-    UpdatePositions();
-    //delay(2000);
-    blinkLED(false);
-}
-
-/** PowerDown() Function
- * Disables control of arm servos, deenergizing them after positioning the arm near the exhibit floor.
- */
-void PowerDown()
-{
-  // Move to rest position
-    Coor->setR(rinit);
-    Coor->setT(tinit);
-    Coor->setZ(FLOORBOUND);  
-    UpdatePositions();  
-    delay(2000);
-  // Power-down
-    hShoulder.Stop();
-    vShoulderM.Stop();
-    vShoulderS.Stop();
-    ElbowM.Stop();
-    ElbowS.Stop();
-    Claw.Stop();
-    blinkLED(false);
-}
 
 /** GetInput() Function
  * Reads control board and returns:
@@ -455,30 +455,53 @@ int GetInput() {
   return 0;
 }
 
-double actuatorCommand(double angle){
+/** PowerUp() Function
+ * Enables control of arm servos, energizing them to starting positions.
+ */
+void PowerUp() {
+  // Power-up
+    hShoulder.Start();
+    vShoulderM.Start();
+    vShoulderS.Start();
+    ElbowM.Start();
+    ElbowS.Start();
+    Claw.Start();
 
-  double ActuatorComponentAngle = 360 - (MountComponentAngle + LegComponentAngle + 90 + angle);
-  double ActuatorLength = sqrt(pow(AMHG,2) + pow(AMRG,2) - (2 * AMHG * AMRG * cos(ActuatorComponentAngle * toRadians)));
-  double ActuatorCommand = (ActMaxPos - ActuatorLength) * (ActCmdRange / ActPosRange)+ ActMaxCmd;
-  if (ActuatorLength < ActMinPos) {
-    return ActMinCmd;
-  }
-  else if (ActuatorLength > ActMaxPos) {
-    return ActMaxPos;
-  } else {
-    
-//    Serial.println("***********************");
-//    Serial.println("Error in actuatorCommand() Function, argument out of range");
-//    Serial.println(ActuatorComponentAngle);
-//    Serial.println(ActuatorLength);
-//    Serial.println(ActuatorCommand);
-//    Serial.println("***********************");
-    return ActuatorCommand;
-  }
+  // Move to starting position
+    Coor->setR(rinit);
+    Coor->setT(tinit);
+    Coor->setZ(zinit);  
+    ClawState = false;
+    reset = 0;
+    UpdatePositions();
+    //delay(2000);
+    blinkLED(false);
+}
+
+/** PowerDown() Function
+ * Disables control of arm servos, deenergizing them after positioning the arm near the exhibit floor.
+ */
+void PowerDown()
+{
+  // Move to rest position
+    Coor->setR(rinit);
+    Coor->setT(tinit);
+    Coor->setZ(FLOORBOUND);  
+    UpdatePositions();  
+    delay(2000);
+  // Power-down
+    hShoulder.Stop();
+    vShoulderM.Stop();
+    vShoulderS.Stop();
+    ElbowM.Stop();
+    ElbowS.Stop();
+    Claw.Stop();
+    blinkLED(false);
 }
 
 /** blinkLED() Function
  * Rapidly blinks the headlamp LED 3 times.
+ * "state" determines final lamp state.
  */
 void blinkLED(bool state) {
   for (int l = 0; l < 6; l++) {
@@ -487,5 +510,4 @@ void blinkLED(bool state) {
   }
   digitalWrite(LightPin, state);
 }
-
 
