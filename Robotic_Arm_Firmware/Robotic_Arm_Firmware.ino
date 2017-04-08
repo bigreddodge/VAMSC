@@ -26,40 +26,44 @@
 #include "coor.h"
 #include <string.h>
 
+/** Global Function Prototypes */
+double LoCAngleDEG(double Adj1, double Adj2, double Opp);
+double LoCOppSide(double AngleDEG, double Adj1, double Adj2);
+double PythagH(double L1, double L2);
+double PythagL(double H, double L);
+
 /** Global Constant Declarations */
     // Unit conversion multiplier constants
       static const double toRadians = M_PI / 180;   // DEG -> RAD
       static const double toDegrees = 180 / M_PI;   // RAD -> DEG
   
-
   /** --------------------------------------------------------------------------------------------------------------------------------------- */
   /** NOTE: All spatial references (left, right, etc.) are indicated observing the arm from the base toward the opposing wall of the exhibit. */
   /** vvvvvvvvvv     BEGIN ADJUSTABLE PARAMETERS     vvvvvvvvvvv */
   
     // Exhibit boundaries - Dimensions 45(F)x38(L+R)x16(FLOOR)
-      static const double LBOUND = -22;             // Sets the leftmost claw range in inches from center
-      static const double RBOUND = 16;              // Sets the rightmost claw range in inches from center
+      static const double LBOUND = -22;             // Sets the leftmost (negative) claw range in inches from center
+      static const double RBOUND = 16;              // Sets the rightmost (positive) claw range in inches from center
       static const double FBOUND = 45;              // Sets the forwardmost claw range in inches from center
       static const double FLOORBOUND = 16;          // Sets the lowest claw range in inches from center
       static const double PADDING = 1;              // Spatial buffer for all boundaries
     
     // Initial coordinates
-      static const double rinit = 18;               // Initial claw radius
+      static const double rinit = 21;               // Initial claw radius
       static const double tinit = M_PI / 2;         // Initial rotation (pi/2 = 90* = centered)
-      static const double zinit = 3;                // Initial height
+      static const double zinit = 1;                // Initial height
 
     /** The remaining parameters below are modifiable, but modification is NOT RECOMMENDED without full calculations. */
     // Mechanical boundaries & parameters
       static const double AxesOffset = 3;           // Linear offset from hShoulder to vShoulder rotational axes
       static const double MountOffset = 3.75;       // Linear offset from mount wall to horizontal rotation axis
-      static const double Leg1 = 18;                // ShoulderChannels are no longer symmetric
-      static const double Leg2 = 14;
+      static const double Leg1 = 18;                // Shoulder vertical rotation axis to elbow rotation axis
+      static const double Leg2 = 14;                // Elbow rotation axis to end of closed claw
       static const int thetamin = 0 * toRadians;    // Sets the rightmost mechanical rotation limit
       static const int thetamax = 180 * toRadians;  // Sets the leftmost mechanical rotation limit
-      static const double rmin = AxesOffset + 1;       // Sets the minimum distance from claw to origin
-      static const double zmin = 0.0;               /* Sets the vertical claw limit.
-                                                     * MUST BE NON-NEGATIVE (Causes trig error -> erratic behavior). */
-
+      static const double rmin = AxesOffset + 1;    // Sets the minimum distance from claw to origin. Overrides geometric minimum.
+      static const double zmin = 0.0;               // Sets the vertical claw limit. MUST BE NON-NEGATIVE (Causes trig error -> erratic behavior).
+      static const double ElbowWidth = 4.0;         // Width of the elbow joint assembly
       static const double ElbowMinAngle = 45.0;     // Elbow folding mechanical limit.
       
     /** Linear Servo Parameters */
@@ -80,23 +84,24 @@
 
     // Firmware execution constants
       static const unsigned long watchdog = 15000;  // Inactivity period for power-down. 15000 = 5 minutes
-      static const int loopDelay = 1;               // Firmware execution delay constant
+      static const int LoopDelay = 1;               // Firmware execution delay constant
+      static const int ResetDelay = 12000;          // 
   
   /** ^^^^^^^^^^      END ADJUSTABLE PARAMETERS      ^^^^^^^^^^ */
   /** --------------------------------------------------------------------------------------------------------------------------------------- */
 
     // Operating parameters determined by hardware limitations
-      static const double AMHG = sqrt(pow(AHVO,2) + pow(AHRO,2));   // Actuator Mount (Head-Side) Geometry (Hypotenuse = sqrt(10))
-      static const double AMRG = sqrt(pow(ARVO,2) + pow((Leg1 - ARRO),2));    // Actuator Mount (Rod-Side) Geometry (Hypotenuse = sqrt(186.25))
-      static const double MountComponentAngle = atan(AHVO/AHRO) * toDegrees;  //
-      static const double LegComponentAngle = atan(ARVO/(Leg1 - ARRO)) * toDegrees;
+      static const double AMHG = PythagH(AHVO, AHRO);                               // Actuator Mount (Head-Side) Geometry (Hypotenuse = sqrt(10))
+      static const double AMRG = PythagH(ARVO, (Leg1 - ARRO));                      // Actuator Mount (Rod-Side) Geometry (Hypotenuse = sqrt(186.25))
+      static const double MountComponentAngle = atan(AHVO/AHRO) * toDegrees;        // Component angles are used to calculate linear servo extension
+      static const double LegComponentAngle = atan(ARVO/(Leg1 - ARRO)) * toDegrees; // 
 
-      static const double ActPosRange = abs(ActMaxPos - ActMinPos);       // 4.0" in current configuration
-      static const double ActCmdRange = abs(ActMaxCmd - ActMinCmd);       // 125.0 in current configuration
+      static const double ActPosRange = abs(ActMaxPos - ActMinPos);                 // 4.0" in current configuration
+      static const double ActCmdRange = abs(ActMaxCmd - ActMinCmd);                 // 125.0 in current configuration
     
-  /** These constants define the mininum and maximum acceptable analogRead() values produced
-   *  by operating the joystick on the control board.
-   *  They were determined by repeated trials and modified to provide reasonable thresholds.
+  /** These constants define the mininum and maximum acceptable analogRead() value
+   *  produced by operating the control board joystick. Thresholds were determined
+   *  empirically and provide proper control of four movements with one analog input.
    */
     // Joystick: UP -- analog 50-90
       static const int Umin = 50;
@@ -115,28 +120,20 @@
       static const int vSmax = 90;
       static const int emax = 90;
 
-    /** Sector boundaries provide rotational thresholds which help
-     *  determine proper arm behavior when commanding a coordinate variable
-     *  causes a boundary violation in a different coordinate variable.
-     *  These thresholds are expressed in Radians.
-     */
-      //static const double RSECTOR = atan2(FBOUND - MountOffset, RBOUND);
-      //static const double LSECTOR = atan2(FBOUND - MountOffset, LBOUND);
-  
   /** Hardware digital I/O pin assignments */
     // Control Inputs
-      static const int Btn1 = 15;
-      static const int Btn2 = 14;
-      static const int ClawBtn = 16;
-      static const int LightBtn = 3;
+      static const int Btn1 = 15;               // Up button (panel)
+      static const int Btn2 = 14;               // Down button (panel)
+      static const int ClawBtn = 16;            // Claw button (joystick center button)
+      static const int LightBtn = 3;            // Light button (panel)
     // Arm Outputs
-      static const int hShoulderPin = 9;
-      static const int vShoulderMPin = 8;
-      static const int vShoulderSPin = 7;
-      static const int ElbowMPin = 6;
-      static const int ElbowSPin = 5;
-      static const int ClawPin = 4;
-      static const int LightPin = 2;
+      static const int hShoulderPin = 9;        // Horizontal rotation (Theta) servo signal
+      static const int vShoulderMPin = 8;       // Shoulder vertical rotation servo (master) signal
+      static const int vShoulderSPin = 7;       // Shoulder vertical rotation servo (slave) signal
+      static const int ElbowMPin = 6;           // Elbow vertical rotation servo (master) signal
+      static const int ElbowSPin = 5;           // Elbow vertical rotation servo (slave) signal
+      static const int ClawPin = 4;             // Claw servo signal
+      static const int LightPin = 2;            // Headlight digital output signal
 
   /** Objects */
     /** Servo objects: See joint.h for description.
@@ -156,20 +153,19 @@
       int in, reset = 0;
       unsigned long timer;
       bool ClawState;
-//      double lastElbow, lastShoulder, lastR, lastT, lastZ = 0;
+      
 /** ------------------------------------------------------------------------------------------------------------------------------------------- */
-
 
 /** setup() Function
  * Arduino Initialization
  */
 void setup() {
   // Data direction (I/O) assignments
-    pinMode(Btn1, INPUT);     //vertical down.
-    pinMode(Btn2, INPUT);     //vertical up.
-    pinMode(ClawBtn, INPUT);  //claw control
-    pinMode(LightBtn, INPUT); //button input
-    pinMode(LightPin, OUTPUT);//Light Signal
+    pinMode(Btn1, INPUT);                             // Down button
+    pinMode(Btn2, INPUT);                             // Up button
+    pinMode(ClawBtn, INPUT);                          // Claw control input
+    pinMode(LightBtn, INPUT);                         // Light button input
+    pinMode(LightPin, OUTPUT);                        // Light output signal
 
   // Enable serial debugging messages
     Serial.begin(9600);
@@ -182,7 +178,7 @@ void setup() {
  * Arduino Process
  */
 void loop() {
-  delay(loopDelay);                                   // Controls program execution speed
+  delay(LoopDelay);                                   // Controls program execution speed
   
   /** Watchdog Timer
    *  When controls are inactive for time set by "watchdog" constant, the arm
@@ -192,7 +188,6 @@ void loop() {
       do {                                            // Begin input loop
         in = GetInput();                              // Check for input (also records input for processing)
         if (++timer >= watchdog) {                    // Increment timer and check for timeout
-          Serial.println("Power Down...");
           PowerUp();                                  // Power up arm (reset to home position)
           do {in = GetInput();} while (!in);          // Wait for input
         }
@@ -204,149 +199,127 @@ void loop() {
    *  These values are subject to modification by boundary checks (below) before the arm is m
    *  See Also: GetInput() function comments (below)
   */
-      //lastR = Coor->R();
-      //lastT = Coor->T();
-      //lastZ = Coor->Z();
-      if (in == 1)
+      if (in == 1) {
         Coor->setR(Coor->R() + rinc);                 // increment radius (Extend Out)
-      if (in == 2)
+      }
+      else if (in == 2) {
         Coor->setR(Coor->R() - rinc);                 // decrement radius (Retract In)
-      if (in == 3)
+      }
+      else if (in == 3) {
         Coor->setT(Coor->T() + thetainc);             // increment theta (Rotate Left)
-      if (in == 4)
+      }
+      else if (in == 4) {
         Coor->setT(Coor->T() - thetainc);             // decrement theta (Rotate Right)
-      if (in == 5)
+      }
+      else if (in == 5) {
         Coor->setZ(Coor->Z() - zinc);                 // decrement z (Retract Up)
-      if (in == 6)
+      }
+      else if (in == 6) {
         Coor->setZ(Coor->Z() + zinc);                 // increment z (Extend Down)
+      }
 
+  /** Perform exhibit boundary and mechanical limit checks */
+      checkBoundaries();
+  
+  /** Move arm to modified commanded position */
+      updatePositions();
+}
+
+/** ------------------------------------------------------------------------------------------------------------------------------------------- */
+
+/** checkBoundaries() Function
+ * 
+ */
+void checkBoundaries() {
   /** Check Claw Position Boundaries
    * Compares commanded claw position to exhibit boundaries and physical limitations of the arm.
    * If a boundary conflict is found, the parameter which violates the boundary is modified to equal the boundary,
    * which may cause other parameters to change such that all boundary limits are satisfied.
    */
+    
+  /** Print commanded position debug info */
+    Serial.print("\nCommanded: ");
+    printCoor();
 
     /** Exhibit boundary check.
      *  If the arm is commanded to exceed the boundary, the arm will stop.
      */
-      if (Coor->Z() > FLOORBOUND)                                 // Check floor boundary
+      if (Coor->Z() > FLOORBOUND) {                               // Check floor boundary
         Coor->setZ(FLOORBOUND);
-      if (Coor->Z() < zmin)                                       // Check vertical height boundary
+      }
+      if (Coor->Z() < zmin) {                                     // Check vertical height boundary
         Coor->setZ(zmin);
-      if (Coor->T() < thetamin)                                   // Check rightmost mechanical rotation limit
+      }
+      if (Coor->T() < thetamin) {                                 // Check rightmost mechanical rotation limit
         Coor->setT(thetamin);
-      if (Coor->T() > thetamax)                                   // Check leftmost mechanical rotation limit
+      }
+      if (Coor->T() > thetamax) {                                 // Check leftmost mechanical rotation limit
         Coor->setT(thetamax);
-      if (Coor->R() < rmin)                                       // Check for overfolding of elbow
+      }
+      if (Coor->R() < rmin) {                                     // Check for overfolding of elbow
         Coor->setR(rmin);
+      }
 
     /** Left/Right boundary checks. Modifies Cartesian X to allow continued arm movement.
      *  If the arm is commanded to exceed a boundary, the X Cartesian component is held at the boundary,
-     *  allowing the Y Cartesian component to continue movement.
-     */
-      if ((Coor->T() > (90 * toRadians)) && (Coor->X() <= (LBOUND + PADDING)))
+     *  allowing the Y Cartesian component to continue movement. */
+      if ((Coor->T() > (90 * toRadians)) && (Coor->X() <= (LBOUND + PADDING))) {
         Coor->setX(LBOUND + PADDING);
-      if ((Coor->T() < (90 * toRadians)) && (Coor->X() >= (RBOUND - PADDING)))
+      }
+      if ((Coor->T() < (90 * toRadians)) && (Coor->X() >= (RBOUND - PADDING))) {
         Coor->setX(RBOUND - PADDING);
+      }
         
     /** Front boundary check. (Never exceeded in current configuration).
-     *  Modifies Cartesian Y to the boundary, allowing continued arm movement.
-     */
-      if (Coor->Y() > (FBOUND - (MountOffset + PADDING)))
+     *  Modifies Cartesian Y to the boundary, allowing continued arm movement. */
+      if (Coor->Y() > (FBOUND - (MountOffset + PADDING))) {
         Coor->setY(FBOUND - (MountOffset + PADDING));
+      }
     
     /** Check full-extension mechanical limitation.
-     *  Prevents the arm from being fully extended (linear).
-     */
+     *  Prevents the arm from being fully extended (linear). */
       double ClawVector = PythagH(Coor->R() - AxesOffset, Coor->Z());
-      if (ClawVector > (Leg1 + Leg2 - 1))         // Check for radial overextension
+      if (ClawVector > (Leg1 + Leg2 - 1)) {
         Coor->setR(PythagL((Leg1 + Leg2 - 1), Coor->Z()) + AxesOffset);
+      }
 
     /** Check full-folding mechanical limitation. 
-     *  Limit the radius by calculating the minimum distance from the
-     *  vertical rotation axis to the claw according to the minimum elbow angle.
-     */
+     *  Limit the radius by calculating the minimum distance from the vertical
+     *  rotation axis to the claw according to the minimum elbow angle. */
       double minClawVector = LoCOppSide(ElbowMinAngle, Leg1, Leg2);
-      if (ClawVector < minClawVector)
+      if (ClawVector < minClawVector) {
         Coor->setR(PythagL(minClawVector, Coor->Z()) + AxesOffset);
-  
-  /** Move arm to modified commanded position */
-      UpdatePositions();
+      }
+    
+  /** Print adjusted position debug info */
+    Serial.print("     Adjusted: ");
+    printCoor();
 }
 
-/** ------------------------------------------------------------------------------------------------------------------------------------------- */
-
-/** UpdatePositions() Function
+/** updatePositions() Function
  * Calculates required servo commands.
  * Peforms final mathematical/boundary checks to ensure valid positioning
  * Moves servos to 
  * modified commanded position.
  * Also provides basic serial debugging output.
  */
-void UpdatePositions() {
-  /* Redundant. Remove.
-  // Calculate joint angles (updated 02APR2017 using Law of Cosines) 
-    double RZHyp = sqrt(pow(Coor->R() - AxesOffset, 2) + pow(Coor->Z(), 2));                         // Find imaginary hypotenuse of claw coordinate
-    if (RZHyp > (Leg1 + Leg2 - 1)){
-      RZHyp = Leg1 + Leg2 - 1;
-      Coor->setR(lastR);
-      Coor->setZ(lastZ);
-    }
-    */
-    
-    // Serial.println("RZHyp: " + String(RZHyp) + "   R: " + String(Coor->R()) + "   Z: " + String(Coor->Z()));
-    
-    
-    // Calculate vertical rotation axis to claw distance.
-      double ClawVector = PythagH(Coor->R() - AxesOffset, Coor->Z());
-    
-    /** Calculate elbow angle using Law of Cosines.
-     *  
-     */
-      // double elbow = acos((pow(Leg1, 2) + pow(Leg2, 2) - pow(RZHyp,2)) / (2 * Leg1 * Leg2));
-      double elbow = LoCAngleDEG(Leg1, Leg2, ClawVector);
+void updatePositions() {
+  /** Calculate vertical rotation axis to claw distance */
+    double ClawVector = PythagH(Coor->R() - AxesOffset, Coor->Z());
+  /** Calculate elbow angle using Law of Cosines */
+    double elbow = LoCAngleDEG(Leg1, Leg2, ClawVector);
+  /** Shoulder angle is the sum of two component angles formed by the arm */
+    double shoulder = (asin((Coor->R() - AxesOffset) / ClawVector) * toDegrees) + LoCAngleDEG(ClawVector, Leg1, Leg2);
+      
+  /** Convert shoulder angle to linear actuator position */
+    double ActCmd = actuatorCommand(shoulder);
 
-    /** Shoulder angle is the sum of two component angles formed by the arm.
-     *  
-     */
-      //double shoulder = asin((Coor->R() - AxesOffset) / RZHyp) + acos((pow(RZHyp, 2) + pow(Leg1, 2) - pow(Leg2, 2))/(2 * RZHyp * Leg1));
-      double shoulder = (asin((Coor->R() - AxesOffset) / ClawVector) * toDegrees) + LoCAngleDEG(ClawVector, Leg1, Leg2);
-    
-    /*
-    elbow *= toDegrees;                                                                 // Convert elbow angle to degrees
-    shoulder *= toDegrees;                                                              // Convert shoulder angle to degrees
-    if (isnan(elbow)){
-      elbow = lastElbow;
-    }
-    if (isnan(shoulder)){
-      shoulder = lastShoulder;
-    }
-    */
-    
-    /*if (isnan(elbow) || isnan(shoulder)) {                                           // Check for undefined result
-      Serial.print("Undefined angle commanded. Shoulder: ");
-      Serial.print(shoulder);
-      Serial.print("   Elbow: ");
-      Serial.println(elbow);
-      return;
-    }*/
-    
-   /*if (elbow < ElbowMinAngle){                                                       // Elbow mechanical hard-limit - Folding. (Added 8/20/2015)
-     elbow = ElbowMinAngle;
-   }*/
+  /** Print debugging parameters */
+    Serial.print("   Elbow: " + String(elbow) + "   Shoulder: " + String(shoulder) + "   ClawPos: " + String(ClawVector));
 
-   Serial.println("(r,t,z): (" + String(Coor->R()) + "," + String(Coor->T()) + "," + String(Coor->Z()) + ")   " + "Elbow: " + String(elbow) + "   Shoulder: " + String(shoulder));
-  
-  // Linear actuator positioning
-      double ActCmd = actuatorCommand(shoulder);
-  //lastShoulder = shoulder;
-  //lastElbow = elbow;
-  
-  // Move servos
+  /** Move servos */
     hShoulder.Move(Coor->T() * toDegrees);
-    if (ActCmd != -1) {vShoulderM.Move(ActCmd);}
-    // vShoulderM.Move(shoulder);
-    // vShoulderS.Move(shoulder);
+    vShoulderM.Move(ActCmd);
     ElbowM.Move(180 - elbow);
     ElbowS.Move(180 - elbow);
     Claw.Move(ClawState);
@@ -357,21 +330,17 @@ void UpdatePositions() {
  *  Converts the specified angleDEG shoulder angle to a joint() object compatible linear actuator command
  *  based on the hardware configuration geometry defined/calculated in the global constants section.
  */
-double actuatorCommand(double angleDEG){
+double actuatorCommand(double angleDEG) {
   double ActuatorComponentAngle = 360 - (MountComponentAngle + LegComponentAngle + 90 + angleDEG);
-  
-  //double ActuatorLength = sqrt(pow(AMHG,2) + pow(AMRG,2) - (2 * AMHG * AMRG * cos(ActuatorComponentAngle * toRadians)));
   double ActuatorLength = LoCOppSide(ActuatorComponentAngle, AMHG, AMRG);
-  
   double ActuatorCommand = ((ActMaxPos - ActuatorLength) * (ActCmdRange / ActPosRange)) + ActMaxCmd;
-  
   if (ActuatorLength < ActMinPos) {
     Serial.print("\nActuator min-extension boundary violation!");
     return ActMinCmd;
   }
   else if (ActuatorLength > ActMaxPos) {
     Serial.print("\nActuator max-extension boundary violation!");
-    return ActMaxPos;
+    return ActMaxCmd;
   }
   else {
     return ActuatorCommand;
@@ -380,27 +349,26 @@ double actuatorCommand(double angleDEG){
 
 
 /** --------------------------------------------------------------------------------------------------------------------------------------- */
-/** Trig Functions */
+/** Trig Functions (Global by prototype) */
 
-double LoCAngleDEG(double Adj1, double Adj2, double Opp){
+double LoCAngleDEG(double Adj1, double Adj2, double Opp) {
   return (acos((pow(Adj1, 2) + pow(Adj2, 2) - pow(Opp, 2)) / (2 * Adj1 * Adj2)) * toDegrees);
 }
 
-double LoCOppSide(double AngleDEG, double Adj1, double Adj2){
+double LoCOppSide(double AngleDEG, double Adj1, double Adj2) {
   return sqrt(pow(Adj1, 2) + pow(Adj2, 2) - (2 * cos(AngleDEG * toRadians) * Adj1 * Adj2));
 }
 
-double PythagH(double L1, double L2){
+double PythagH(double L1, double L2) {
   return sqrt(pow(L1, 2) + pow(L2, 2));
 }
 
-double PythagL(double H, double L){
+double PythagL(double H, double L) {
   return sqrt(pow(H, 2) - pow(L, 2));
 }
 
 /** --------------------------------------------------------------------------------------------------------------------------------------- */
 /** Control Functions */
-
 
 /** GetInput() Function
  * Reads control board and returns:
@@ -438,16 +406,20 @@ int GetInput() {
     delay(10);
     if (digitalRead(LightBtn)) {
       digitalWrite(LightPin, !digitalRead(LightPin));
+      Serial.print("\nReset sequence");
       while(digitalRead(LightBtn)) {
         ++reset;
-        Serial.println(reset);
-        if (reset >= 12000) {
-          PowerDown();
-          delay(2000);
+        Serial.print('.');
+        if (!(reset % 1000)) {
+          Serial.print("\n");
+        }
+        if (reset >= ResetDelay) {
+          Serial.print("\nResetting.");
           PowerUp();
           break;
         }
       }
+      Serial.print("\n");
       reset = 0;
       return 7;  
     }
@@ -460,34 +432,34 @@ int GetInput() {
  */
 void PowerUp() {
   // Power-up
+    Serial.print("\nPowering up...");
     hShoulder.Start();
     vShoulderM.Start();
     vShoulderS.Start();
     ElbowM.Start();
     ElbowS.Start();
     Claw.Start();
-
   // Move to starting position
     Coor->setR(rinit);
     Coor->setT(tinit);
     Coor->setZ(zinit);  
     ClawState = false;
     reset = 0;
-    UpdatePositions();
-    //delay(2000);
+    updatePositions();
     blinkLED(false);
+    Serial.print("READY.");
 }
 
 /** PowerDown() Function
  * Disables control of arm servos, deenergizing them after positioning the arm near the exhibit floor.
  */
-void PowerDown()
-{
+void PowerDown() {
+    Serial.print("\nGoing to stanby...");
   // Move to rest position
     Coor->setR(rinit);
     Coor->setT(tinit);
     Coor->setZ(FLOORBOUND);  
-    UpdatePositions();  
+    updatePositions();  
     delay(2000);
   // Power-down
     hShoulder.Stop();
@@ -497,6 +469,7 @@ void PowerDown()
     ElbowS.Stop();
     Claw.Stop();
     blinkLED(false);
+    Serial.print("DONE.");
 }
 
 /** blinkLED() Function
@@ -509,5 +482,9 @@ void blinkLED(bool state) {
     delay(100);
   }
   digitalWrite(LightPin, state);
+}
+
+void printCoor() {
+  Serial.print("(r,t,z): (" + String(Coor->R()) + ", " + String(Coor->T() * toDegrees) + ", " + String(Coor->Z()) + ")");
 }
 
