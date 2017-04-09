@@ -83,9 +83,9 @@ double PythagL(double H, double L);
       static const double zinc = 0.1;               // Vertical increment size
 
     // Firmware execution constants
-      static const unsigned long watchdog = 15000;  // Inactivity period for power-down. 15000 = 5 minutes
+      static const unsigned long ResetDelay = 3;    // (seconds) Light button hold period to trigger reset
+      static const unsigned long TimerDelay = 5;    // (minutes) Inactivity period to trigger reset
       static const int LoopDelay = 1;               // Firmware execution delay constant
-      static const int ResetDelay = 12000;          // 
   
   /** ^^^^^^^^^^      END ADJUSTABLE PARAMETERS      ^^^^^^^^^^ */
   /** --------------------------------------------------------------------------------------------------------------------------------------- */
@@ -150,8 +150,7 @@ double PythagL(double H, double L);
       coor* Coor = new coor(rinit, tinit, zinit);
 
 /** Global Variable Declarations */
-      int in, reset = 0;
-      unsigned long timer;
+      int in;
       bool ClawState;
       
 /** ------------------------------------------------------------------------------------------------------------------------------------------- */
@@ -160,6 +159,10 @@ double PythagL(double H, double L);
  * Arduino Initialization
  */
 void setup() {
+  // Enable serial debugging messages
+    Serial.begin(9600);
+    Serial.print("\nStarting up...");
+
   // Data direction (I/O) assignments
     pinMode(Btn1, INPUT);                             // Down button
     pinMode(Btn2, INPUT);                             // Up button
@@ -167,9 +170,6 @@ void setup() {
     pinMode(LightBtn, INPUT);                         // Light button input
     pinMode(LightPin, OUTPUT);                        // Light output signal
 
-  // Enable serial debugging messages
-    Serial.begin(9600);
-  
   // Enable Arm
     PowerUp();
 }
@@ -178,21 +178,22 @@ void setup() {
  * Arduino Process
  */
 void loop() {
-  delay(LoopDelay);                                   // Controls program execution speed
+  delay(LoopDelay);                                                 // Controls program execution speed
   
   /** Watchdog Timer
    *  When controls are inactive for time set by "watchdog" constant, the arm
    *  powers down and waits in an internal loop until an input is received.
   */
-      timer = 0;                                      // Reset timer
-      do {                                            // Begin input loop
-        in = GetInput();                              // Check for input (also records input for processing)
-        if (++timer >= watchdog) {                    // Increment timer and check for timeout
-          PowerUp();                                  // Power up arm (reset to home position)
-          do {in = GetInput();} while (!in);          // Wait for input
+      unsigned long timer = millis() + (TimerDelay * 60000);        // Set watchdog timer
+      do {                                                          // Begin input loop
+        in = GetInput();                                            // Check for input (also records input for processing)
+        if (millis() >= timer) {                                    // Check for timeout
+          Serial.print("\nInactivity timeout. Resetting...");
+          PowerUp();                                                // Reset to home position
+          do {in = GetInput();} while (!in);                        // Wait for input
         }
-        delay(10);                                    // Process delay (also aides in debouncing inputs)
-      } while (!in);                                  // End of input loop
+        delay(10);                                                  // Process delay (input debounce)
+      } while (!in);                                                // End of input loop
       
   /** Process Input
    *  Modifies claw coordinates according to control input.
@@ -406,21 +407,16 @@ int GetInput() {
     delay(10);
     if (digitalRead(LightBtn)) {
       digitalWrite(LightPin, !digitalRead(LightPin));
-      Serial.print("\nReset sequence");
+      Serial.print("\nHold " + String(ResetDelay) + " seconds to reset... ");
+      unsigned long reset = millis() + (ResetDelay * 1000);
       while(digitalRead(LightBtn)) {
-        ++reset;
-        Serial.print('.');
-        if (!(reset % 1000)) {
-          Serial.print("\n");
-        }
-        if (reset >= ResetDelay) {
-          Serial.print("\nResetting.");
+        if (millis() >= reset) {
+          Serial.print("Resetting...");
           PowerUp();
-          break;
+          return 7;
         }
       }
-      Serial.print("\n");
-      reset = 0;
+      Serial.print("Cancelled.");
       return 7;  
     }
   }
@@ -432,7 +428,6 @@ int GetInput() {
  */
 void PowerUp() {
   // Power-up
-    Serial.print("\nPowering up...");
     hShoulder.Start();
     vShoulderM.Start();
     vShoulderS.Start();
@@ -444,7 +439,6 @@ void PowerUp() {
     Coor->setT(tinit);
     Coor->setZ(zinit);  
     ClawState = false;
-    reset = 0;
     updatePositions();
     blinkLED(false);
     Serial.print("READY.");
@@ -454,7 +448,7 @@ void PowerUp() {
  * Disables control of arm servos, deenergizing them after positioning the arm near the exhibit floor.
  */
 void PowerDown() {
-    Serial.print("\nGoing to stanby...");
+    Serial.print("\nGoing to sleep...");
   // Move to rest position
     Coor->setR(rinit);
     Coor->setT(tinit);
@@ -469,7 +463,7 @@ void PowerDown() {
     ElbowS.Stop();
     Claw.Stop();
     blinkLED(false);
-    Serial.print("DONE.");
+    Serial.print("ZZZZZzzzzzz.......");
 }
 
 /** blinkLED() Function
