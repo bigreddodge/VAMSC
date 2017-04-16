@@ -6,11 +6,12 @@
  *                "Reaching Out for Clues" Exhibit
  * Author:        Imran A. Uddin
  *                Old Dominion University
- * Version:       1.1.3
- * Major:         20AUG2014
- * Minor:         20AUG2015
- * Revision:      02APR2017
- *                Parameter and operational modifications
+ * Contributors:  Derek Davis
+ * Version:       2.0.0
+ * Major:         16APR2017
+ * Minor:         16APR2017
+ * Revision:      16APR2017
+ *                First deployable release in this configuration.
  * Includes:      Robotic_Arm_Firmware.ino (this file)
  *                joint.h
  *                joint.cpp
@@ -31,6 +32,9 @@ double LoCAngleDEG(double Adj1, double Adj2, double Opp);
 double LoCOppSide(double AngleDEG, double Adj1, double Adj2);
 double PythagH(double L1, double L2);
 double PythagL(double H, double L);
+
+// Set this value to false for normal operation or true for debugging output (serial monitor)
+static const bool DEBUG = false;
 
 /** Global Constant Declarations */
     // Unit conversion multiplier constants
@@ -143,10 +147,7 @@ double PythagL(double H, double L);
       joint vShoulderS =  joint(1860, 1420,    0, vSmax,  1, vShoulderSPin);        // SS: Slave Select -- setting this property to '1' indicates the servo
       joint ElbowM     =  joint(1490, 1615,    0,  emax,  0, ElbowMPin);            //     operates reverse tandem from its adjoining master servo.
       joint ElbowS     =  joint(1490, 1615,    0,  emax,  1, ElbowSPin);            // Physical disuse of a slave servo has no effect on firmware operation.
-      joint Claw       =  joint(2100, 1500,    0,     1,  0, ClawPin);              // v1: 2100/0 = Closed; 725/1 = Open,
-                                                                                    // v2: 2300/0 = Closed; 600/1 = Open,
-                                                                                    // v3: 2250/0 = Closed; 700/1 = Open,
-                                                                                    // v4: 2250/0 = Closed; 1500/1 = Open
+      joint Claw       =  joint(2100, 1500,    0,     1,  0, ClawPin);              // v4: 2250/0 = Closed; 1500/1 = Open
     /** Coordinate object: See coor.h for description. */
       coor* Coor = new coor(rinit, tinit, zinit);
 
@@ -161,9 +162,11 @@ double PythagL(double H, double L);
  */
 void setup() {
   // Enable serial debugging messages
+  if (DEBUG) {
     Serial.begin(9600);
     Serial.print("\nStarting up...");
-
+  }
+  
   // Data direction (I/O) assignments
     pinMode(Btn1, INPUT);                             // Down button
     pinMode(Btn2, INPUT);                             // Up button
@@ -189,7 +192,7 @@ void loop() {
       do {                                                          // Begin input loop
         in = GetInput();                                            // Check for input (also records input for processing)
         if (millis() >= timer) {                                    // Check for timeout
-          Serial.print("\nInactivity timeout. Resetting...");
+          if (DEBUG) {Serial.print("\nInactivity timeout. Resetting...");}
           PowerUp();                                                // Reset to home position
           do {in = GetInput();} while (!in);                        // Wait for input
         }
@@ -240,9 +243,11 @@ void checkBoundaries() {
    */
     
   /** Print commanded position debug info */
-    //Serial.print("\nCommanded: ");
-    //printCoor();
-
+    if (DEBUG) {
+      Serial.print("\nCommanded: ");
+      printCoor();
+    }
+    
     /** Exhibit boundary check.
      *  If the arm is commanded to exceed the boundary, the arm will stop.
      */
@@ -295,8 +300,10 @@ void checkBoundaries() {
     
 
   /** Print adjusted position debug info */
-    //Serial.print("     Adjusted: ");
-    //printCoor();
+    if (DEBUG) {
+      Serial.print("     Adjusted: ");
+      printCoor();
+    }
 }
 
 /** updatePositions() Function
@@ -318,8 +325,8 @@ void updatePositions() {
     double ActCmd = actuatorCommand(shoulder);
 
   /** Print debugging parameters */
-    Serial.print("   Elbow: " + String(elbow) + "   Shoulder: " + String(shoulder) + "   ClawPos: " + String(ClawVector));
-
+    if (DEBUG) {Serial.print("   Elbow: " + String(elbow) + "   Shoulder: " + String(shoulder) + "   ClawPos: " + String(ClawVector));}
+    
   /** Move servos */
     hShoulder.Move(Coor->T() * toDegrees);
     vShoulderM.Move(ActCmd);
@@ -338,11 +345,11 @@ double actuatorCommand(double angleDEG) {
   double ActuatorLength = LoCOppSide(ActuatorComponentAngle, AMHG, AMRG);
   double ActuatorCommand = ((ActMaxPos - ActuatorLength) * (ActCmdRange / ActPosRange)) + ActMaxCmd;
   if (ActuatorLength < ActMinPos) {
-    Serial.print("\nActuator min-extension boundary violation!");
+    if (DEBUG) {Serial.print("\nActuator min-extension boundary violation!");}
     return ActMinCmd;
   }
   else if (ActuatorLength > ActMaxPos) {
-    Serial.print("\nActuator max-extension boundary violation!");
+    if (DEBUG) {Serial.print("\nActuator max-extension boundary violation!");}
     return ActMaxCmd;
   }
   else {
@@ -409,16 +416,16 @@ int GetInput() {
     delay(10);
     if (digitalRead(LightBtn)) {
       digitalWrite(LightPin, !digitalRead(LightPin));
-      Serial.print("\nHold " + String(ResetDelay) + " seconds to reset... ");
+      if (DEBUG) {Serial.print("\nHold " + String(ResetDelay) + " seconds to reset... ");}
       unsigned long reset = millis() + (ResetDelay * 1000);
       while(digitalRead(LightBtn)) {
         if (millis() >= reset) {
-          Serial.print("Resetting...");
+          if (DEBUG) {Serial.print("Resetting...");}
           PowerUp();
           return 7;
         }
       }
-      Serial.print("Cancelled.");
+      if (DEBUG) {Serial.print("Cancelled.");}
       return 7;  
     }
   }
@@ -443,14 +450,14 @@ void PowerUp() {
     ClawState = false;
     updatePositions();
     blinkLED(false);
-    Serial.print("READY.");
+    if (DEBUG) {Serial.print("READY.");}
 }
 
 /** PowerDown() Function
  * Disables control of arm servos, deenergizing them after positioning the arm near the exhibit floor.
  */
 void PowerDown() {
-    Serial.print("\nGoing to sleep...");
+    if (DEBUG) {Serial.print("\nGoing to sleep...");}
   // Move to rest position
     Coor->setR(rinit);
     Coor->setT(tinit);
@@ -465,7 +472,7 @@ void PowerDown() {
     ElbowS.Stop();
     Claw.Stop();
     blinkLED(false);
-    Serial.print("ZZZZZzzzzzz.......");
+    if (DEBUG) {Serial.print("ZZZZZzzzzzz.......");}
 }
 
 /** blinkLED() Function
@@ -481,6 +488,6 @@ void blinkLED(bool state) {
 }
 
 void printCoor() {
-  Serial.print("(r,t,z): (" + String(Coor->R()) + ", " + String(Coor->T() * toDegrees) + ", " + String(Coor->Z()) + ")");
+  if (DEBUG) {Serial.print("(r,t,z): (" + String(Coor->R()) + ", " + String(Coor->T() * toDegrees) + ", " + String(Coor->Z()) + ")");}
 }
 
