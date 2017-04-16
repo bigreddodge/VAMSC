@@ -42,50 +42,50 @@ double PythagL(double H, double L);
   /** vvvvvvvvvv     BEGIN ADJUSTABLE PARAMETERS     vvvvvvvvvvv */
   
     // Exhibit boundaries - Dimensions 45(F)x38(L+R)x16(FLOOR)
-      static const double LBOUND = -22;             // Sets the leftmost (negative) claw range in inches from center
-      static const double RBOUND = 16;              // Sets the rightmost (positive) claw range in inches from center
-      static const double FBOUND = 45;              // Sets the forwardmost claw range in inches from center
-      static const double FLOORBOUND = 16;          // Sets the lowest claw range in inches from center
-      static const double PADDING = 1;              // Spatial buffer for all boundaries
+      static const double LBOUND = -22;                 // Sets the leftmost (negative) claw range in inches from center
+      static const double RBOUND = 16;                  // Sets the rightmost (positive) claw range in inches from center
+      static const double FBOUND = 45;                  // Sets the forwardmost claw range in inches from center
+      static const double FLOORBOUND = 16;              // Sets the lowest claw range in inches from center
+      static const double PADDING = 1;                  // Spatial buffer for all boundaries
     
     // Initial coordinates
-      static const double rinit = 21;               // Initial claw radius
-      static const double tinit = M_PI / 2;         // Initial rotation (pi/2 = 90* = centered)
-      static const double zinit = 1;                // Initial height
+      static const double rinit = 20;                   // Initial claw radius
+      static const double tinit = M_PI / 2;             // Initial rotation (pi/2 = 90* = centered)
+      static const double zinit = 1;                    // Initial height
 
     /** The remaining parameters below are modifiable, but modification is NOT RECOMMENDED without full calculations. */
     // Mechanical boundaries & parameters
-      static const double AxesOffset = 3;           // Linear offset from hShoulder to vShoulder rotational axes
-      static const double MountOffset = 3.75;       // Linear offset from mount wall to horizontal rotation axis
-      static const double Leg1 = 18;                // Shoulder vertical rotation axis to elbow rotation axis
-      static const double Leg2 = 14;                // Elbow rotation axis to end of closed claw
-      static const int thetamin = 0 * toRadians;    // Sets the rightmost mechanical rotation limit
-      static const int thetamax = 180 * toRadians;  // Sets the leftmost mechanical rotation limit
-      static const double rmin = AxesOffset + 1;    // Sets the minimum distance from claw to origin. Overrides geometric minimum.
-      static const double zmin = 0.0;               // Sets the vertical claw limit. MUST BE NON-NEGATIVE (Causes trig error -> erratic behavior).
-      static const double ElbowWidth = 4.0;         // Width of the elbow joint assembly
-      static const double ElbowMinAngle = 45.0;     // Elbow folding mechanical limit.
+      static const double AxesOffset = 3;               // Linear offset from hShoulder to vShoulder rotational axes
+      static const double MountOffset = 3.75;           // Linear offset from mount wall to horizontal rotation axis
+      static const double Leg1 = 18;                    // Shoulder vertical rotation axis to elbow rotation axis
+      static const double Leg2 = 14;                    // Elbow rotation axis to end of closed claw
+      static const double thetaMin = 45 * toRadians;    // Sets the rightmost mechanical rotation limit
+      static const double thetaMax = 135 * toRadians;   // Sets the leftmost mechanical rotation limit
+      static const double rmin = AxesOffset + 1;        // Sets the minimum distance from claw to origin. Overrides geometric minimum.
+      static const double zmin = 0.0;                   // Sets the vertical claw limit. MUST BE NON-NEGATIVE (Causes trig error -> erratic behavior).
+      static const double ElbowWidth = 4.0;             // Width of the elbow joint assembly
+      static const double ElbowMinAngle = 45.0;         // Elbow folding mechanical limit.
       
     /** Linear Servo Parameters */
-      static const double AHVO = 3;                 // Actuator Head Vertical Offset
-      static const double AHRO = 1;                 // Actuator Head Radial Offset
-      static const double ARVO = 2;                 // Actuator Rod Vertical Offset
-      static const double ARRO = 4.5;               // Actuator Rod Radial Offset
+      static const double AHVO = 3;                     // Actuator Head Vertical Offset
+      static const double AHRO = 1;                     // Actuator Head Radial Offset
+      static const double ARVO = 2;                     // Actuator Rod Vertical Offset
+      static const double ARRO = 4.5;                   // Actuator Rod Radial Offset
 
-      static const double ActMinPos = 12;           // Actuator length at minimum extension (within mechanical limits)
-      static const double ActMaxPos = 16;           // Actuator length at maximum extension (within mechanical limits) 
-      static const double ActMinCmd = 145;          // Actuator command corresponding to minimum extension (determined empirically)
-      static const double ActMaxCmd = 20;           // Actuator command corresponding to maximum extension (determined empirically)
+      static const double ActMinPos = 12;               // Actuator length at minimum extension (within mechanical limits)
+      static const double ActMaxPos = 16;               // Actuator length at maximum extension (within mechanical limits) 
+      static const double ActMinCmd = 145;              // Actuator command corresponding to minimum extension (determined empirically)
+      static const double ActMaxCmd = 20;               // Actuator command corresponding to maximum extension (determined empirically)
 
     // Paremetric velocity constants
-      static const double rinc = 0.25;              // Radial increment size
-      static const double thetainc = M_PI / 128;    // Rotational increment size
-      static const double zinc = 0.1;               // Vertical increment size
+      static const double rinc = 0.25;                  // Radial increment size
+      static const double thetainc = M_PI / 256;        // Rotational increment size
+      static const double zinc = 0.2;                   // Vertical increment size
 
     // Firmware execution constants
-      static const unsigned long ResetDelay = 3;    // (seconds) Light button hold period to trigger reset
-      static const unsigned long TimerDelay = 5;    // (minutes) Inactivity period to trigger reset
-      static const int LoopDelay = 1;               // Firmware execution delay constant
+      static const unsigned long ResetDelay = 3;        // (seconds) Light button hold period to trigger reset
+      static const unsigned long TimerDelay = 5;        // (minutes) Inactivity period to trigger reset
+      static const int LoopDelay = 1;                   // Firmware execution delay constant
   
   /** ^^^^^^^^^^      END ADJUSTABLE PARAMETERS      ^^^^^^^^^^ */
   /** --------------------------------------------------------------------------------------------------------------------------------------- */
@@ -143,9 +143,10 @@ double PythagL(double H, double L);
       joint vShoulderS =  joint(1860, 1420,    0, vSmax,  1, vShoulderSPin);        // SS: Slave Select -- setting this property to '1' indicates the servo
       joint ElbowM     =  joint(1490, 1615,    0,  emax,  0, ElbowMPin);            //     operates reverse tandem from its adjoining master servo.
       joint ElbowS     =  joint(1490, 1615,    0,  emax,  1, ElbowSPin);            // Physical disuse of a slave servo has no effect on firmware operation.
-      joint Claw       =  joint(2250,  700,    0,     1,  0, ClawPin);              // v1: 2100/0 = Closed; 725/1 = Open,
+      joint Claw       =  joint(2100, 1500,    0,     1,  0, ClawPin);              // v1: 2100/0 = Closed; 725/1 = Open,
                                                                                     // v2: 2300/0 = Closed; 600/1 = Open,
                                                                                     // v3: 2250/0 = Closed; 700/1 = Open,
+                                                                                    // v4: 2250/0 = Closed; 1500/1 = Open
     /** Coordinate object: See coor.h for description. */
       coor* Coor = new coor(rinit, tinit, zinit);
 
@@ -251,11 +252,11 @@ void checkBoundaries() {
       if (Coor->Z() < zmin) {                                     // Check vertical height boundary
         Coor->setZ(zmin);
       }
-      if (Coor->T() < thetamin) {                                 // Check rightmost mechanical rotation limit
-        Coor->setT(thetamin);
+      if (Coor->T() < thetaMin) {                                 // Check rightmost mechanical rotation limit
+        Coor->setT(thetaMin);
       }
-      if (Coor->T() > thetamax) {                                 // Check leftmost mechanical rotation limit
-        Coor->setT(thetamax);
+      if (Coor->T() > thetaMax) {                                 // Check leftmost mechanical rotation limit
+        Coor->setT(thetaMax);
       }
       if (Coor->R() < rmin) {                                     // Check for overfolding of elbow
         Coor->setR(rmin);
@@ -292,6 +293,7 @@ void checkBoundaries() {
         Coor->setR(PythagL(minClawVector, Coor->Z()) + AxesOffset);
       }
     
+
   /** Print adjusted position debug info */
     Serial.print("     Adjusted: ");
     printCoor();
