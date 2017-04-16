@@ -1,6 +1,6 @@
 /** ------------------------------------------------------------------------------------------------------------------------------------------- */
 /*
- * Firmware:      Robotic Arm Exhibit v1.1.3
+ * Firmware:      Robotic Arm Exhibit v2.0.0
  * Description:   Cylindrical-coordinate control system
  * Location:      Virginia Beach Marine Science Center
  *                "Reaching Out for Clues" Exhibit
@@ -17,7 +17,7 @@
  *                joint.cpp
  *                coor.h
  *                coor.cpp
- * Verified IDEs: v1.6.5
+ * Verified IDEs: Arduino v1.6.5 
  */
 /** ------------------------------------------------------------------------------------------------------------------------------------------- */
 
