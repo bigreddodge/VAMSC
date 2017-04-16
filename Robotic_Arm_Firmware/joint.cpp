@@ -6,6 +6,7 @@
  *                "Reaching Out for Clues" Exhibit
  * Author:        Imran A. Uddin
  *                Old Dominion University
+ * Revision:      16APR2017
  * Includes:      Robotic_Arm_Firmware.ino
  *                joint.h
  *                joint.cpp (this file)
@@ -47,7 +48,6 @@ double joint::ReturnAngle(){return map(uS, MinMicros, MaxMicros, MinAngle, MaxAn
 /* Converts the angle argument into a PWM value and writes it to the servo.
  * If the servo is in the slave configuration, the PWM value is adjusted. */
 void joint::Move(double angle) {
-  //uS = map(angle, MinAngle, MaxAngle, MinMicros, MaxMicros);  //Map angle (degrees) to microseconds
     uS = angle * (MaxMicros - MinMicros) / (MaxAngle - MinAngle) + MinMicros;
     if (slave)                  // Handle slave offset
       uS = slaveoffset - uS;
