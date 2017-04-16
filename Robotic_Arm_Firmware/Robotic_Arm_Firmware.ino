@@ -240,8 +240,8 @@ void checkBoundaries() {
    */
     
   /** Print commanded position debug info */
-    Serial.print("\nCommanded: ");
-    printCoor();
+    //Serial.print("\nCommanded: ");
+    //printCoor();
 
     /** Exhibit boundary check.
      *  If the arm is commanded to exceed the boundary, the arm will stop.
@@ -295,8 +295,8 @@ void checkBoundaries() {
     
 
   /** Print adjusted position debug info */
-    Serial.print("     Adjusted: ");
-    printCoor();
+    //Serial.print("     Adjusted: ");
+    //printCoor();
 }
 
 /** updatePositions() Function
